@@ -1,13 +1,13 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { ArrowRight } from "@/ui/icons";
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { Image, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
 import { authClient } from "@/lib/auth";
 import { useSession } from "@/state/session";
 import { useBrand } from "@/theme/BrandProvider";
-import { Button, Chip, Eyebrow, Field, Stack, Surface, Text, useLayout } from "@/ui/primitives";
+import { Button, ErrorNote, Field, Stack, Text, useLayout } from "@/ui/primitives";
 
 type Tenant = { id: string; name: string; slug: string; role: string };
 
@@ -20,6 +20,8 @@ const MESSAGES: Record<string, string> = {
 
 export default function SignIn() {
   const { tokens: t, theme } = useBrand();
+  const slug = useSession((s) => s.brandSlug);
+  const brand = useQuery({ queryKey: ["public-brand", slug], queryFn: () => api<{ name: string }>(`/public/brand/${slug}`), enabled: !!slug, staleTime: 3_600_000, retry: false });
   const { wide, gutter } = useLayout();
   const qc = useQueryClient();
   const setSession = useSession((s) => s.set);
@@ -30,7 +32,7 @@ export default function SignIn() {
   const [tenants, setTenants] = useState<Tenant[] | null>(null);
 
   const choose = (tenant: Tenant) => {
-    setSession({ tenantId: tenant.id, storeId: null });
+    setSession({ tenantId: tenant.id, storeId: null, brandSlug: tenant.slug });
     void qc.invalidateQueries();
     router.replace("/");
   };
@@ -52,39 +54,64 @@ export default function SignIn() {
     }
   };
 
+  const brandName = brand.data?.name ?? "Point of sale";
+  const logo = theme.logo.mark ?? (t.scheme === "dark" ? theme.logo.dark : theme.logo.light);
+  const form = (
+    <View style={{ width: "100%", maxWidth: 400, gap: t.space(5) }}>
+      {tenants ? (
+        <Stack gap={4}>
+          <Stack gap={1}>
+            <Text variant="heading" accessibilityRole="header">
+              Choose a business
+            </Text>
+            <Text variant="label" tone="muted">
+              Your account works for more than one.
+            </Text>
+          </Stack>
+          <View style={{ gap: t.space(2) }}>
+            {tenants.map((tn) => (
+              <Button key={tn.id} kind="secondary" size="lg" label={tn.name} trailing={<Text variant="caption" tone="muted">{tn.role.charAt(0) + tn.role.slice(1).toLowerCase()}</Text>} onPress={() => choose(tn)} />
+            ))}
+          </View>
+        </Stack>
+      ) : (
+        <Stack gap={4}>
+          <Stack gap={1}>
+            <Text variant="heading" accessibilityRole="header">
+              Sign in
+            </Text>
+            <Text variant="label" tone="muted">
+              Use the email your manager invited.
+            </Text>
+          </Stack>
+          <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="username" />
+          <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" textContentType="password" onSubmitEditing={submit} />
+          {error ? <ErrorNote message={error} /> : null}
+          <Button label="Sign in" onPress={submit} loading={busy} disabled={!email || !password} size="lg" block trailing={<ArrowRight size={18} color={t.color.onPrimary} />} />
+        </Stack>
+      )}
+      <Text variant="caption" tone="muted">
+        Sales you make offline are kept on this device and sync when the connection returns.
+      </Text>
+    </View>
+  );
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: t.color.background }}>
-      <ScrollView contentContainerStyle={{ flexGrow: 1, flexDirection: wide ? "row" : "column", padding: gutter, gap: gutter * 2, alignItems: wide ? "center" : "stretch", justifyContent: "center" }} keyboardShouldPersistTaps="handled">
-        <Stack gap={4} style={{ flex: wide ? 1 : undefined, maxWidth: 560, paddingTop: wide ? 0 : t.space(12) }}>
-          <Eyebrow>Point of sale</Eyebrow>
-          <Text variant="display" accessibilityRole="header">
-            {theme.name}
-          </Text>
-          <Text tone="muted" style={{ maxWidth: 420 }}>
-            Sell, look after your clients and run every boutique from one place — online or off.
-          </Text>
-        </Stack>
-
-        <Surface style={{ width: "100%", maxWidth: 440 }} raised>
-          {tenants ? (
-            <Stack gap={4}>
-              <Text variant="heading">Choose a business</Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: t.space(2) }}>
-                {tenants.map((tn) => (
-                  <Chip key={tn.id} label={`${tn.name} · ${tn.role.toLowerCase()}`} onPress={() => choose(tn)} />
-                ))}
-              </View>
-            </Stack>
-          ) : (
-            <Stack gap={4}>
-              <Text variant="heading">Sign in</Text>
-              <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="username" />
-              <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" textContentType="password" onSubmitEditing={submit} />
-              {error ? <Text tone="danger" variant="label">{error}</Text> : null}
-              <Button label="Continue" onPress={submit} loading={busy} disabled={!email || !password} size="lg" trailing={<ArrowRight size={18} weight="light" color={t.color.onPrimary} />} />
-            </Stack>
-          )}
-        </Surface>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, flexDirection: wide ? "row" : "column" }} keyboardShouldPersistTaps="handled">
+        {/* The store's own colour carries the brand panel; the form stays on a calm surface. */}
+        <View style={{ flex: wide ? 1 : undefined, backgroundColor: t.color.primary, padding: gutter * (wide ? 2 : 1), paddingTop: wide ? gutter * 2 : gutter * 3, justifyContent: "space-between", gap: t.space(8), minHeight: wide ? undefined : 220 }}>
+          {logo ? <Image source={{ uri: logo }} style={{ width: 48, height: 48, borderRadius: t.radius.sm }} accessibilityLabel={`${brandName} logo`} /> : <View />}
+          <Stack gap={2}>
+            <Text variant="display" tone="onPrimary" accessibilityRole="header">
+              {brandName}
+            </Text>
+            <Text tone="onPrimary" style={{ opacity: 0.85, maxWidth: 420 }}>
+              Sell, look after your clients and run every store from one place.
+            </Text>
+          </Stack>
+        </View>
+        <View style={{ flex: wide ? 1 : undefined, alignItems: "center", justifyContent: "center", padding: gutter * (wide ? 2 : 1), paddingVertical: gutter * 2 }}>{form}</View>
       </ScrollView>
     </KeyboardAvoidingView>
   );

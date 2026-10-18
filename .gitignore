@@ -11,3 +11,4 @@ out
 coverage
 apps/desktop/web
 apps/desktop/dist
+!.env.docker.example

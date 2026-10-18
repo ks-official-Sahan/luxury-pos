@@ -48,6 +48,21 @@ export const brandThemeSchema = z.object({
   logo: z.object({ light: z.url().optional(), dark: z.url().optional(), mark: z.url().optional() }).default({}),
   /** Rename domain words per vertical: "Client" for "Customer", "Atelier" for "Store". */
   terminology: z.record(z.string().max(32), z.string().max(32)).default({}),
+  /** "brand" tints greys toward the primary hue; "pure" keeps them chroma-free. */
+  neutrals: z.enum(["brand", "pure"]).default("brand"),
+  /** How the till is laid out. Every store can arrange its register for its own counter and staff. */
+  layout: z
+    .object({
+      /** Which side the running sale sits on (counter position, handedness). */
+      ticketSide: z.enum(["left", "right"]).default("right"),
+      catalog: z.enum(["grid", "list"]).default("grid"),
+      tileSize: z.enum(["s", "m", "l"]).default("m"),
+      showImages: z.boolean().default(true),
+      showStock: z.boolean().default(true),
+      /** Cash quick-tender amounts in major units; empty = derived from the total. */
+      quickCash: z.array(z.number().int().positive().max(1_000_000)).max(6).default([]),
+    })
+    .default({ ticketSide: "right", catalog: "grid", tileSize: "m", showImages: true, showStock: true, quickCash: [] }),
   receipt: z
     .object({
       header: z.string().max(280).default(""),

@@ -1,0 +1,19 @@
+{
+  "name": "@luxury-pos/edge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker edge gateway: serves the web app from Workers Static Assets and routes /api to origin backends (Node today, Django or split services tomorrow) with failover, edge caching and rate limits.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251001.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5",
+    "wrangler": "^4.40.0"
+  }
+}

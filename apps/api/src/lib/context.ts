@@ -29,6 +29,10 @@ export const hashToken = (token: string) => createHash("sha256").update(token).d
 const cache = new Map<string, { at: number; value: Omit<Actor, "via" | "scopes" | "email" | "name"> | null }>();
 const TTL_MS = 30_000;
 export const invalidateMembership = (tenantId: string, userId: string) => cache.delete(`${tenantId}:${userId}`);
+/** After a role-matrix edit every member's cached permissions are stale. */
+export const invalidateTenant = (tenantId: string) => {
+  for (const key of cache.keys()) if (key.startsWith(`${tenantId}:`)) cache.delete(key);
+};
 
 async function loadMembership(db: Db, tenantId: string, userId: string) {
   const key = `${tenantId}:${userId}`;

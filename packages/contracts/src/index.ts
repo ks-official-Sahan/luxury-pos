@@ -162,3 +162,4 @@ export const syncPullSchema = z.object({
 export const askSchema = z.object({ question: z.string().min(3).max(500), storeId: id.optional() });
 
 export type ApiError = { error: { code: string; message: string; details?: unknown } };
+export * from "./events";

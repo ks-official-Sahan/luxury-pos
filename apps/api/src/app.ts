@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { z } from "zod";
-import { ROLES } from "@luxury-pos/core";
+import { PERMISSIONS, ROLES } from "@luxury-pos/core";
 import {
   apiTokenSchema,
   askSchema,
@@ -22,6 +22,7 @@ import {
   themeUpdateSchema,
   transferSchema,
 } from "@luxury-pos/contracts";
+import { buildOpenApi } from "@luxury-pos/contracts/openapi";
 import { createCollectHandler } from "@sahan-sac/analytics-kit/collect";
 import { parseRange } from "@sahan-sac/analytics-kit";
 import { betterAuthRoute, originGuard, securityHeaders } from "@sahan-sac/auth-kit/hono";
@@ -31,6 +32,7 @@ import { assertCan, authenticate, type AppEnv } from "./lib/context";
 import { AppError, onError } from "./lib/errors";
 import { handleMcp } from "./mcp";
 import * as admin from "./services/admin";
+import * as backoffice from "./services/backoffice";
 import * as catalog from "./services/catalog";
 import * as customers from "./services/customers";
 import * as drawer from "./services/drawer";
@@ -80,6 +82,21 @@ export function createApp(infra: Infra, auth: Auth) {
     const ip = c.req.header("x-real-ip") ?? "unknown";
     if (!(await infra.limit("login:ip", `signup:${ip}`)).ok) throw new AppError(429, "rate_limited", "try again later");
     return c.json(await admin.signUpTenant(infra, signUpSchema.parse(await c.req.json())), 201);
+  });
+
+  // The HTTP contract, for client generators and alternative backends (see packages/contracts/src/openapi.ts).
+  const openapi = buildOpenApi();
+  app.get("/api/openapi.json", (c) => {
+    c.header("Cache-Control", "public, max-age=300");
+    return c.json(openapi);
+  });
+
+  // Public brand for the sign-in screen and customer displays: theme + name only, cacheable by nginx/the edge.
+  app.get("/api/public/brand/:slug", async (c) => {
+    const slug = c.req.param("slug");
+    if (!/^[a-z0-9-]{3,40}$/.test(slug)) throw new AppError(404, "not_found", "store not found");
+    c.header("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+    return c.json(await backoffice.publicBrand(infra, slug));
   });
 
   // Businesses the signed-in person works for (the device picks one, then sends X-Tenant-Id).
@@ -139,6 +156,19 @@ export function createApp(infra: Infra, auth: Auth) {
     assertCan(actor(c), "tenant.billing");
     return c.json(await infra.analytics.read(parseRange(c.req.query("range"))));
   });
+
+  // back office read models (keyset-paginated)
+  const page = (c: { req: { query: (k: string) => string | undefined } }, max = 100) => ({ cursor: c.req.query("cursor"), limit: Math.min(Math.max(Number(c.req.query("limit") ?? 50) || 50, 1), max) });
+  api.get("/orders", async (c) => c.json(await backoffice.listOrders(infra, actor(c), { ...page(c), storeId: c.req.query("storeId"), status: c.req.query("status"), q: c.req.query("q")?.slice(0, 40) })));
+  api.get("/orders/:id", async (c) => c.json(await backoffice.orderDetail(infra, actor(c), z.uuid().parse(c.req.param("id")))));
+  api.get("/staff", async (c) => c.json(await backoffice.listStaff(infra, actor(c))));
+  api.get("/devices", async (c) => c.json(await backoffice.listDevices(infra, actor(c))));
+  api.get("/tokens", async (c) => c.json(await backoffice.listTokens(infra, actor(c))));
+  api.get("/audit", async (c) => c.json(await backoffice.listAudit(infra, actor(c), { ...page(c), action: c.req.query("action")?.slice(0, 60) })));
+  api.get("/roles", async (c) => c.json(await backoffice.roleMatrix(infra, actor(c))));
+  api.put("/roles/:role", async (c) =>
+    c.json(await backoffice.setRolePermissions(infra, actor(c), z.enum(ROLES).parse(c.req.param("role")), await body(c, z.union([z.object({ permissions: z.array(z.enum(PERMISSIONS)).max(PERMISSIONS.length) }), z.object({ reset: z.literal(true) })])))),
+  );
 
   // administration
   api.put("/branding", async (c) => c.json(await admin.setTheme(infra, actor(c), await body(c, themeUpdateSchema), c.req.query("storeId"))));

@@ -1,0 +1,200 @@
+# Local/staging stack. Run with an env file so ${VAR:-default} interpolation picks it up:
+#   cp .env.docker.example .env.docker && docker compose --env-file .env.docker up -d --build
+# Profiles: events (redpanda), ops (backups).
+name: luxury-pos
+
+x-api-build: &api-build
+  context: .
+  dockerfile: docker/api.Dockerfile
+
+x-api-env: &api-env
+  NODE_ENV: ${NODE_ENV:-production}
+  PORT: "8787"
+  DATABASE_URL: postgres://app_user:${APP_DB_PASSWORD:-app_dev_only}@postgres:5432/luxury_pos
+  AUTH_SECRET: ${AUTH_SECRET:-dev-only-auth-secret-change-me-0123456789}
+  SITE_URL: ${SITE_URL:-http://localhost:8080}
+  APP_ORIGINS: ${APP_ORIGINS:-http://localhost:8080}
+  NATIVE_ORIGINS: ${NATIVE_ORIGINS:-}
+  TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
+  UPSTASH_REDIS_REST_URL: http://redis-http:80
+  UPSTASH_REDIS_REST_TOKEN: ${REDIS_HTTP_TOKEN:-local-dev-token}
+  KAFKA_BROKERS: ${KAFKA_BROKERS:-}
+  KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-luxury-pos-api}
+  EVENTS_TOPIC_PREFIX: ${EVENTS_TOPIC_PREFIX:-luxury-pos}
+
+x-api-depends: &api-depends
+  grants:
+    condition: service_completed_successfully
+  redis:
+    condition: service_healthy
+  redis-http:
+    condition: service_started
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres_dev_only # superuser, dev only
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # One-shot: migrations as owner role (pos).
+  migrate:
+    build: *api-build
+    image: luxury-pos/api:local
+    working_dir: /app/packages/db
+    command: ["node", "--import", "tsx", "src/migrate.ts"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://pos:${POS_DB_PASSWORD:-pos_dev_only}@postgres:5432/luxury_pos
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # One-shot: grants for app_user (RLS-enforced, non-superuser). Re-run after each migrate.
+  grants:
+    image: postgres:17-alpine
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: luxury_pos
+      PGUSER: pos
+      PGPASSWORD: ${POS_DB_PASSWORD:-pos_dev_only}
+    volumes:
+      - ./infra/postgres/grants.sql:/grants.sql:ro
+    command: ["psql", "-v", "ON_ERROR_STOP=1", "-f", "/grants.sql"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # Upstash-compatible REST API over Redis (dev stand-in for Upstash).
+  redis-http:
+    image: hiett/serverless-redis-http:latest
+    environment:
+      SRH_MODE: env
+      SRH_TOKEN: ${REDIS_HTTP_TOKEN:-local-dev-token}
+      SRH_CONNECTION_STRING: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    build: *api-build
+    image: luxury-pos/api:local
+    environment: *api-env
+    expose:
+      - "8787"
+    depends_on: *api-depends
+    restart: unless-stopped
+
+  # Same image, command override. No HTTP listener, so no HEALTHCHECK. Scale: --scale worker=3.
+  worker:
+    build: *api-build
+    image: luxury-pos/api:local
+    command: ["node", "--conditions=react-server", "--import", "tsx", "apps/api/src/worker.ts"]
+    environment: *api-env
+    healthcheck:
+      disable: true
+    depends_on: *api-depends
+    deploy:
+      replicas: 1
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        EXPO_PUBLIC_API_URL: ""
+    image: luxury-pos/web:local
+    ports:
+      - "8080:80"
+    environment:
+      API_UPSTREAM: api:8787
+      API_FALLBACK_UPSTREAM: api:8787
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # profile: events. Set KAFKA_BROKERS=redpanda:9092 in .env.docker to enable publishing.
+  redpanda:
+    profiles: ["events"]
+    image: docker.redpanda.com/redpandadata/redpanda:v25.1.1
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=internal://0.0.0.0:9092
+      - --advertise-kafka-addr=internal://redpanda:9092
+    volumes:
+      - redpandadata:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+
+  # profile: ops. Daily logical dump loop. Run one-off: docker compose --profile ops run --rm backup /usr/local/bin/backup.sh
+  backup:
+    profiles: ["ops"]
+    build:
+      context: .
+      dockerfile: docker/backup.Dockerfile
+    image: luxury-pos/backup:local
+    env_file:
+      - path: ./.env.docker
+        required: false
+    environment:
+      BACKUP_DATABASE_URL: postgres://pos:${POS_DB_PASSWORD:-pos_dev_only}@postgres:5432/luxury_pos
+      BACKUP_DIR: /backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    command: ["sh", "-c", "while true; do /usr/local/bin/backup.sh || echo '[backup] run failed'; sleep $$BACKUP_INTERVAL_SECONDS; done"]
+    volumes:
+      - backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  redpandadata:
+  backups:

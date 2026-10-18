@@ -18,12 +18,16 @@ import { createOrder, refundOrder } from "./services/orders";
 import { requestOverride } from "./services/overrides";
 import { lowStock } from "./services/inventory";
 import { salesSummary } from "./services/reports";
+import { listAudit, listOrders, orderDetail, publicBrand, roleMatrix, setRolePermissions } from "./services/backoffice";
+import { outbox } from "@luxury-pos/db";
+import { sql } from "drizzle-orm";
 
 const url = process.env.TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 
 suite("POS end to end", () => {
   let infra: Infra;
+  let slug = "";
   let seed: NonNullable<Awaited<ReturnType<typeof seedDemo>>>;
   const actorFor = (role: Role, storeIds: string[] | null): Actor => ({
     userId: seed.staff[role]!,
@@ -39,7 +43,7 @@ suite("POS end to end", () => {
 
   beforeAll(async () => {
     infra = createInfra(loadEnv({ ...process.env, DATABASE_URL: url!, AUTH_SECRET: "x".repeat(40), SITE_URL: "http://localhost:8787", NODE_ENV: "test" }));
-    const slug = `e2e-${Date.now().toString(36)}`;
+    slug = `e2e-${Date.now().toString(36)}`;
     seed = (await seedDemo(infra.db, { slug, pin: "4826" }))!;
   });
   afterAll(async () => infra?.pool.end());
@@ -184,5 +188,39 @@ suite("POS end to end", () => {
     // Token scopes exclude customer.read even though the manager role has it.
     const denied = (await (await call({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "find_client", arguments: { query: "Camille" } } })).json()) as { result: { isError: boolean } };
     expect(denied.result.isError).toBe(true);
+  });
+
+  it("pages orders by keyset, shows detail, and records domain events in the outbox", async () => {
+    const owner = actorFor("OWNER", null);
+    const first = await listOrders(infra, owner, { limit: 1 });
+    expect(first.items).toHaveLength(1);
+    expect(first.nextCursor).toBeTruthy();
+    const second = await listOrders(infra, owner, { limit: 1, cursor: first.nextCursor! });
+    expect(second.items[0]!.id).not.toBe(first.items[0]!.id);
+    const detail = await orderDetail(infra, owner, first.items[0]!.id);
+    expect(detail.lines.length).toBeGreaterThan(0);
+    const events = await withTenant(infra.db, seed.tenantId, (tx) => tx.select({ topic: outbox.topic, payload: outbox.payload }).from(outbox).where(sql`${outbox.topic} like 'event:%'`));
+    expect(events.some((e) => e.topic === "event:pos.order.created.v1" && (e.payload as { specversion: string }).specversion === "1.0")).toBe(true);
+    // Someone scoped to another store cannot read it.
+    const other = actorFor("MANAGER", [seed.stores.paris === first.items[0]!.storeId ? seed.stores.dubai : seed.stores.paris]);
+    await expect(orderDetail(infra, other, first.items[0]!.id)).rejects.toBeInstanceOf(AppError);
+  });
+
+  it("edits the role matrix without privilege escalation, audited", async () => {
+    const manager = actorFor("MANAGER", null);
+    await expect(setRolePermissions(infra, manager, "ADMIN", { permissions: ["sale.create"] })).rejects.toBeInstanceOf(AppError);
+    await expect(setRolePermissions(infra, manager, "CASHIER", { permissions: ["tenant.billing"] })).rejects.toBeInstanceOf(AppError);
+    const owner = actorFor("OWNER", null);
+    const m = await setRolePermissions(infra, owner, "CASHIER", { permissions: ["sale.create", "catalog.read"] });
+    expect(m.roles.find((r) => r.role === "CASHIER")).toMatchObject({ customized: true, permissions: ["sale.create", "catalog.read"] });
+    await setRolePermissions(infra, owner, "CASHIER", { reset: true });
+    expect((await roleMatrix(infra, owner)).roles.find((r) => r.role === "CASHIER")!.customized).toBe(false);
+    const audit = await listAudit(infra, owner, { limit: 10, action: "roles." });
+    expect(audit.items.length).toBe(2);
+  });
+
+  it("serves only name and theme publicly", async () => {
+    const brand = await publicBrand(infra, slug);
+    expect(Object.keys(brand).sort()).toEqual(["name", "theme"]);
   });
 });

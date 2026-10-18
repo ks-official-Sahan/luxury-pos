@@ -8,6 +8,7 @@ import { apiTokens, devices, memberships, posAuditEvents, stores, tenants, users
 import type { Infra } from "../infra";
 import { allowed, assertCan, hashToken, invalidateMembership, TOKEN_PREFIX, type Actor } from "../lib/context";
 import { AppError, conflict, forbidden, notFound } from "../lib/errors";
+import { emit } from "../events/emit";
 
 /** Everything a device needs after sign-in, in one call: tenant, visible stores with resolved brand, own permissions. */
 export async function bootstrap(infra: Infra, actor: Actor) {
@@ -83,6 +84,7 @@ export async function setTheme(infra: Infra, actor: Actor, theme: BrandTheme, st
       if (!s) throw notFound("store");
     } else await tx.update(tenants).set({ theme: parsed }).where(eq(tenants.id, actor.tenantId));
     await tx.insert(posAuditEvents).values({ tenantId: actor.tenantId, storeId, actorId: actor.userId, action: "branding.updated", entity: storeId ? "store" : "tenant", entityId: storeId ?? actor.tenantId, data: { name: parsed.name } });
+    await emit(tx, actor.tenantId, "pos.branding.updated.v1", { storeId: storeId ?? null }, { storeId });
     return parsed;
   });
 }

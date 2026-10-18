@@ -272,6 +272,7 @@ export const customers = pgTable(
   (t) => [
     uniqueIndex("customers_tenant_email").on(t.tenantId, sql`lower(${t.email})`),
     index("customers_tenant_phone").on(t.tenantId, t.phone),
+    index("customers_tenant_recent").on(t.tenantId, t.lastPurchaseAt.desc().nullsLast(), t.id),
     index("customers_search").using("gin", sql`to_tsvector('simple', ${t.firstName} || ' ' || coalesce(${t.lastName}, '') || ' ' || coalesce(${t.email}, ''))`),
     check("customers_points_nonneg", sql`${t.pointsBalance} >= 0`),
   ],
@@ -366,6 +367,7 @@ export const orders = pgTable(
   },
   (t) => [
     index("orders_store_created").on(t.tenantId, t.storeId, t.createdAt),
+    index("orders_tenant_created_id").on(t.tenantId, t.createdAt, t.id),
     index("orders_customer").on(t.customerId, t.createdAt),
     index("orders_staff").on(t.tenantId, t.staffId, t.createdAt),
     uniqueIndex("orders_receipt").on(t.tenantId, t.receiptNo),
