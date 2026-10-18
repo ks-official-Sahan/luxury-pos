@@ -12,6 +12,7 @@ import { Kbd, Text, useLayout } from "@/ui/primitives";
 import { toast } from "@/ui/toast";
 import { NAV } from "./nav";
 import { useUi } from "./ui-state";
+import { modKey } from "./useShortcuts";
 
 type Entry = { id: string; group: string; label: string; hint?: string; icon?: ReactNode; run: () => void };
 
@@ -57,7 +58,7 @@ export function CommandPalette() {
         .filter((i) => i.permission === null || can(i.permission))
         .map((i) => ({ i, label: i.plural ? `${term(i.label)}s` : term(i.label) }))
         .filter(({ i, label }) => match(`${label} ${i.keywords ?? ""}`))
-        .map(({ i, label }) => ({ id: `nav:${String(i.href)}`, group: "Go to", label, hint: i.shortcut ? `${i.shortcut}` : undefined, icon: <i.icon size={18} color={t.color.textMuted} />, run: go(i.href) })),
+        .map(({ i, label }) => ({ id: `nav:${String(i.href)}`, group: "Go to", label, hint: i.shortcut && Platform.OS === "web" ? `${modKey} ${i.shortcut}` : undefined, icon: <i.icon size={18} color={t.color.textMuted} />, run: go(i.href) })),
     );
     const actions: Entry[] = [
       { id: "a:new", group: "Actions", label: "Start a new sale", run: () => (useCart.getState().clear(), go("/")()) },

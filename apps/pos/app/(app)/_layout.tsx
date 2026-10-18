@@ -95,7 +95,7 @@ function NavLink({ item, active, collapsed, onPress }: { item: ShownItem; active
   );
 }
 
-function Sidebar({ collapsed }: { collapsed: boolean }) {
+function Sidebar({ collapsed, canCollapse }: { collapsed: boolean; canCollapse: boolean }) {
   const t = useTokens();
   const insets = useSafeAreaInsets();
   const groups = useNavItems();
@@ -175,7 +175,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
             <SignOut size={18} color={t.color.textMuted} />
           </IconButton>
         </View>
-        {Platform.OS === "web" ? (
+        {Platform.OS === "web" && canCollapse ? (
           <IconButton label={collapsed ? "Expand sidebar" : "Collapse sidebar"} size="sm" onPress={() => set({ sidebarCollapsed: !collapsed })}>
             <SidebarSimple size={18} color={t.color.textMuted} />
           </IconButton>
@@ -271,7 +271,7 @@ export default function AppLayout() {
         </>
       ) : (
         <>
-          <Sidebar collapsed={bp === "tablet" || collapsedPref} />
+          <Sidebar collapsed={bp === "tablet" || collapsedPref} canCollapse={bp === "desktop"} />
           {content}
         </>
       )}

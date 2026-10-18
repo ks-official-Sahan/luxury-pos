@@ -5,7 +5,7 @@ import { modKey } from "@/shell/useShortcuts";
 import { priceLines, useCart } from "@/state/cart";
 import { useTerm, useTokens } from "@/theme/BrandProvider";
 import { Minus, Plus, ShoppingBag, Tag, Trash, UserCircle, X } from "@/ui/icons";
-import { Badge, Button, EmptyState, focusRing, IconButton, Kbd, Money, Row, Stat, Text } from "@/ui/primitives";
+import { Badge, Button, EmptyState, focusRing, IconButton, Kbd, Money, Row, Stat, Text, useLayout } from "@/ui/primitives";
 
 /**
  * The running sale. Count, total and the pay action never leave the screen
@@ -16,6 +16,7 @@ export function Ticket({ onPay, onClient, onDiscount, tendering, onClose }: { on
   const t = useTokens();
   const term = useTerm();
   const store = useStore();
+  const { bp } = useLayout();
   const { lines, orderDiscount, client, setQuantity, remove, clear, setClient } = useCart();
   if (!store) return null;
   const priced = priceLines(lines, orderDiscount, store.currency, store.taxMode);
@@ -146,15 +147,29 @@ export function Ticket({ onPay, onClient, onDiscount, tendering, onClose }: { on
           <Money amount={priced.total} currency={store.currency} variant="amount" />
         </Row>
         {tendering ? null : (
-          <Row gap={2} style={{ marginTop: t.space(2) }}>
-            <Button kind="secondary" size="lg" label="Discount" icon={<Tag size={18} color={t.color.text} />} onPress={onDiscount} disabled={!lines.length} />
+          <Row gap={2} style={{ marginTop: t.space(2) }} align="stretch">
+            {/* Icon-only beside Charge so the total on the pay button never truncates. */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={orderDiscount ? "Change the discount" : "Add a discount"}
+              disabled={!lines.length}
+              onPress={onDiscount}
+              style={({ hovered, focused }: { hovered?: boolean; pressed: boolean; focused?: boolean }) =>
+                ({ width: t.hit + 20, borderRadius: t.radius.md, borderWidth: 1, borderColor: t.color.border, alignItems: "center", justifyContent: "center", gap: 2, opacity: lines.length ? 1 : 0.45, backgroundColor: orderDiscount ? t.color.primarySoft : hovered ? t.color.hover : t.color.surface, ...focusRing(t, focused) }) as ViewStyle
+              }
+            >
+              <Tag size={20} color={orderDiscount ? t.color.onPrimarySoft : t.color.text} />
+              <Text variant="caption" tone={orderDiscount ? "onPrimarySoft" : "muted"}>
+                Discount
+              </Text>
+            </Pressable>
             <Button
               size="xl"
               label="Charge"
               trailing={
                 <Row gap={2}>
                   <Money amount={priced.total} currency={store.currency} variant="subheading" tone="onPrimary" />
-                  <Kbd>{`${modKey}↵`}</Kbd>
+                  {bp === "desktop" ? <Kbd>{`${modKey}↵`}</Kbd> : null}
                 </Row>
               }
               onPress={onPay}
