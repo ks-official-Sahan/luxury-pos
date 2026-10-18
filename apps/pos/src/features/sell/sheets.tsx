@@ -36,7 +36,7 @@ export function ApprovalSheet({ visible, action, storeId, onClose, onApproved }:
       onClose={onClose}
       variant="dialog"
       title="Manager approval"
-      description={`This ${action === "price" ? "price change" : action === "refund" ? "refund" : "discount"} is above your limit. A manager can approve it here.`}
+      description={action === "void" ? "Taking items off a sale needs a manager. They can approve it here; it is recorded either way." : `This ${action === "price" ? "price change" : action === "refund" ? "refund" : "discount"} is above your limit. A manager can approve it here.`}
       footer={<Button label="Approve" size="lg" block loading={busy} disabled={!email || pin.length < 4} onPress={go} icon={<ShieldCheck size={18} color={t.color.onPrimary} />} />}
     >
       <Field label="Manager email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" />

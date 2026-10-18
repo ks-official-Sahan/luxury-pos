@@ -17,6 +17,7 @@ import { createApiToken, verifyPin } from "./services/admin";
 import { createOrder, refundOrder } from "./services/orders";
 import { requestOverride } from "./services/overrides";
 import { availableSerials, lowStock } from "./services/inventory";
+import { setDeviceStatus } from "./services/devices";
 import { salesSummary } from "./services/reports";
 import { listAudit, listOrders, orderDetail, publicBrand, roleMatrix, setRolePermissions } from "./services/backoffice";
 import { outbox } from "@luxury-pos/db";
@@ -232,5 +233,43 @@ suite("POS end to end", () => {
     const serials = await availableSerials(infra, cashier, seed.stores.paris, watch.id);
     expect(serials.map((x) => x.serial)).toContain("AUR-0001-PAR");
     await expect(availableSerials(infra, cashier, seed.stores.dubai, watch.id)).rejects.toMatchObject({ code: "forbidden" });
+  });
+  it("lets only approved tills take sales, while any signed-in device can read", async () => {
+    const app = createApp(infra, await createAuth(infra));
+    const origin = "http://localhost:8787";
+    const email = (await withTenant(infra.db, seed.tenantId, (tx) => tx.query.users.findFirst({ where: (u, { eq }) => eq(u.id, seed.staff.CASHIER!) })))!.email;
+    const signIn = await app.fetch(new Request(`${origin}/api/auth/auth-kit/sign-in`, { method: "POST", headers: { "content-type": "application/json", origin }, body: JSON.stringify({ email, password: "demo-password-123" }) }));
+    expect(signIn.status).toBe(200);
+    const cookie = signIn.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
+    const call = (path: string, init: { method?: string; json?: unknown; device?: string } = {}) =>
+      app.fetch(
+        new Request(`${origin}/api${path}`, {
+          method: init.method ?? "GET",
+          headers: { cookie, origin, "x-tenant-id": seed.tenantId, "content-type": "application/json", ...(init.device ? { "x-device-id": init.device } : {}) },
+          body: init.json === undefined ? undefined : JSON.stringify(init.json),
+        }),
+      );
+
+    const deviceId = uuidv7();
+    const reg = await call("/devices", { method: "POST", json: { id: deviceId, storeId: seed.stores.paris, name: "Pop-up iPad", platform: "ios" } });
+    expect(reg.status).toBe(201);
+    expect(((await reg.json()) as { status: string }).status).toBe("pending");
+
+    const scarfId = seed.variants.find((v) => v.sku === "CAR-90-ORCH")!.id;
+    const sale = () => ({ id: uuidv7(), storeId: seed.stores.paris, deviceId, createdAt: new Date().toISOString(), lines: [{ variantId: scarfId, quantity: 1 }], tenders: [{ method: "card", amount: 52_000 }], expectedTotal: 52_000 });
+    const code = async (r: Response) => ((await r.json()) as { error?: { code: string } }).error?.code;
+
+    expect(await code(await call("/orders", { method: "POST", json: sale() }))).toBe("device_required");
+    expect(await code(await call("/orders", { method: "POST", json: sale(), device: deviceId }))).toBe("device_pending");
+    expect((await call("/me")).status).toBe(200); // reading still works on a pending device
+
+    const owner = actorFor("OWNER", null);
+    await setDeviceStatus(infra, owner, deviceId, "approved");
+    const ok = await call("/orders", { method: "POST", json: sale(), device: deviceId });
+    expect(ok.status).toBe(201);
+    expect(await code(await call("/orders", { method: "POST", json: { ...sale(), deviceId: seed.deviceId }, device: deviceId }))).toBe("device_mismatch");
+
+    await setDeviceStatus(infra, owner, deviceId, "blocked", "Lost on the shop floor");
+    expect(await code(await call("/orders", { method: "POST", json: sale(), device: deviceId }))).toBe("device_blocked");
   });
 });

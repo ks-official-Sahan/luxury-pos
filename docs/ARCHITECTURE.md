@@ -2,6 +2,8 @@
 
 A universal, white-label POS: one codebase for iOS, Android, web, Windows, macOS and Linux, one multi-tenant API, and a staff MCP endpoint for AI assistants. Market research and the feature roadmap are in [RESEARCH.md](./RESEARCH.md); the design system in [../DESIGN.md](../DESIGN.md); operations in [OPERATIONS.md](./OPERATIONS.md); the kits we build on in [SAHAN-KITS.md](./SAHAN-KITS.md).
 
+Status, domain packages and roadmap: [BLUEPRINT.md](BLUEPRINT.md).
+
 ## Overview
 
 ```

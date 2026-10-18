@@ -32,6 +32,7 @@ import { assertCan, authenticate, type AppEnv } from "./lib/context";
 import { AppError, onError } from "./lib/errors";
 import { handleMcp } from "./mcp";
 import * as admin from "./services/admin";
+import { clientIp, deviceStatus, requireApprovedDevice, setDeviceStatus } from "./services/devices";
 import * as backoffice from "./services/backoffice";
 import * as catalog from "./services/catalog";
 import * as customers from "./services/customers";
@@ -62,7 +63,7 @@ export function createApp(infra: Infra, auth: Auth) {
 
   app.onError(onError);
   app.use(securityHeaders());
-  app.use("/api/*", cors({ origin: webOrigins, credentials: true, allowHeaders: ["content-type", "authorization", "x-tenant-id", "idempotency-key"], maxAge: 600 }));
+  app.use("/api/*", cors({ origin: webOrigins, credentials: true, allowHeaders: ["content-type", "authorization", "x-tenant-id", "x-device-id", "idempotency-key"], maxAge: 600 }));
   app.use("/api/*", bodyLimit({ maxSize: 512 * 1024 }));
   app.use("/api/*", originGuard({ siteUrl: env.SITE_URL, extraOrigins: env.APP_ORIGINS, nativeOrigins: env.NATIVE_ORIGINS }));
 
@@ -109,6 +110,8 @@ export function createApp(infra: Infra, auth: Auth) {
   // Everything below needs a session (+ X-Tenant-Id) or a personal access token.
   const api = new Hono<AppEnv>();
   api.use(authenticate(infra, auth));
+  // Money and stock move only from approved tills (device trust); reads work from any signed-in device.
+  const till = requireApprovedDevice(infra);
   const body = async <T extends z.ZodType>(c: { req: { json: () => Promise<unknown> } }, schema: T) => schema.parse(await c.req.json()) as z.infer<T>;
   const actor = (c: { get: (k: "actor") => AppEnv["Variables"]["actor"] }) => c.get("actor");
 
@@ -123,21 +126,40 @@ export function createApp(infra: Infra, auth: Auth) {
   api.patch("/products/:id", async (c) => c.json(await catalog.updateProduct(infra, actor(c), c.req.param("id"), await body(c, productSchema.omit({ variants: true }).partial()))));
 
   // selling
-  api.post("/orders", async (c) => {
-    const result = await createOrder(infra, actor(c), await body(c, createOrderSchema));
+  api.post("/orders", till, async (c) => {
+    const input = await body(c, createOrderSchema);
+    // The receipt sequence belongs to the till that sends the sale, not to whatever id the body claims.
+    if (input.deviceId !== c.req.header("x-device-id")) throw new AppError(403, "device_mismatch", "the sale must come from the till it names");
+    const result = await createOrder(infra, actor(c), input);
     return c.json(result, result.replayed ? 200 : 201);
   });
-  api.post("/refunds", async (c) => c.json(await refundOrder(infra, actor(c), await body(c, refundSchema)), 201));
-  api.post("/overrides", async (c) => c.json(await requestOverride(infra, actor(c), await body(c, overrideRequestSchema))));
+  api.post("/refunds", till, async (c) => c.json(await refundOrder(infra, actor(c), await body(c, refundSchema)), 201));
+  api.post("/till-events", till, async (c) => {
+    const input = await body(
+      c,
+      z.object({
+        id: z.uuid(),
+        action: z.enum(["line_voided", "quantity_reduced", "sale_cleared"]),
+        storeId: z.uuid(),
+        deviceId: z.uuid(),
+        lines: z.array(z.object({ variantId: z.uuid(), name: z.string().max(200), quantity: z.number().int().positive(), amount: z.number().int() })).min(1).max(500),
+        approved: z.boolean(),
+        at: z.iso.datetime(),
+      }),
+    );
+    if (input.deviceId !== c.req.header("x-device-id")) throw new AppError(403, "device_mismatch", "the event must come from the till it names");
+    return c.json(await admin.recordTillEvent(infra, actor(c), input), 201);
+  });
+  api.post("/overrides", till, async (c) => c.json(await requestOverride(infra, actor(c), await body(c, overrideRequestSchema))));
 
   // drawer
-  api.post("/drawers", async (c) => c.json(await drawer.openDrawer(infra, actor(c), await body(c, drawerOpenSchema)), 201));
-  api.post("/drawers/:id/movements", async (c) => c.json(await drawer.drawerMovement(infra, actor(c), c.req.param("id"), await body(c, drawerMovementSchema))));
-  api.post("/drawers/:id/close", async (c) => c.json(await drawer.closeDrawer(infra, actor(c), c.req.param("id"), await body(c, drawerCloseSchema))));
+  api.post("/drawers", till, async (c) => c.json(await drawer.openDrawer(infra, actor(c), await body(c, drawerOpenSchema)), 201));
+  api.post("/drawers/:id/movements", till, async (c) => c.json(await drawer.drawerMovement(infra, actor(c), c.req.param("id"), await body(c, drawerMovementSchema))));
+  api.post("/drawers/:id/close", till, async (c) => c.json(await drawer.closeDrawer(infra, actor(c), c.req.param("id"), await body(c, drawerCloseSchema))));
 
   // inventory
-  api.post("/stock/movements", async (c) => c.json(await inventory.adjustStock(infra, actor(c), await body(c, stockAdjustSchema))));
-  api.post("/stock/transfers", async (c) => c.json(await inventory.transferStock(infra, actor(c), await body(c, transferSchema)), 201));
+  api.post("/stock/movements", till, async (c) => c.json(await inventory.adjustStock(infra, actor(c), await body(c, stockAdjustSchema))));
+  api.post("/stock/transfers", till, async (c) => c.json(await inventory.transferStock(infra, actor(c), await body(c, transferSchema)), 201));
   api.get("/stores/:storeId/serials", async (c) => c.json(await inventory.availableSerials(infra, actor(c), c.req.param("storeId"), z.uuid().parse(c.req.query("variantId")))));
   api.get("/stores/:storeId/low-stock", async (c) => c.json(await inventory.lowStock(infra, actor(c), c.req.param("storeId"))));
 
@@ -173,7 +195,18 @@ export function createApp(infra: Infra, auth: Auth) {
 
   // administration
   api.put("/branding", async (c) => c.json(await admin.setTheme(infra, actor(c), await body(c, themeUpdateSchema), c.req.query("storeId"))));
-  api.post("/devices", async (c) => c.json(await admin.registerDevice(infra, actor(c), await body(c, z.object({ id: z.uuid(), storeId: z.uuid(), name: z.string().min(1).max(60), platform: z.string().max(20) }))), 201));
+  api.post("/devices", async (c) =>
+    c.json(
+      await admin.registerDevice(infra, actor(c), await body(c, z.object({ id: z.uuid(), storeId: z.uuid(), name: z.string().min(1).max(60), platform: z.string().max(20) })), {
+        ip: clientIp(c.req.raw.headers, infra.env.TRUSTED_PROXY_HOPS),
+        userAgent: c.req.header("user-agent")?.slice(0, 300) ?? null,
+      }),
+      201,
+    ),
+  );
+  api.get("/devices/:id/status", async (c) => c.json(await deviceStatus(infra, actor(c), z.uuid().parse(c.req.param("id")))));
+  api.post("/devices/:id/approve", async (c) => c.json(await setDeviceStatus(infra, actor(c), z.uuid().parse(c.req.param("id")), "approved")));
+  api.post("/devices/:id/block", async (c) => c.json(await setDeviceStatus(infra, actor(c), z.uuid().parse(c.req.param("id")), "blocked", (await body(c, z.object({ reason: z.string().max(280).optional() }))).reason)));
   api.post("/staff", async (c) => c.json(await admin.addStaff(infra, actor(c), await body(c, membershipSchema)), 201));
   api.patch("/staff/:id", async (c) =>
     c.json(await admin.updateStaff(infra, actor(c), c.req.param("id"), await body(c, z.object({ role: z.enum(ROLES).optional(), storeIds: z.array(z.uuid()).nullable().optional(), active: z.boolean().optional() })))),

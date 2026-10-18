@@ -20,7 +20,7 @@ export class ApiRequestError extends Error {
 /** Typed JSON call to our API with the session and the active tenant. Never throws on non-JSON bodies. */
 export async function api<T>(path: string, init: RequestInit & { json?: unknown; timeoutMs?: number } = {}): Promise<T> {
   const { json, timeoutMs = 15_000, ...rest } = init;
-  const tenantId = useSession.getState().tenantId;
+  const { tenantId, deviceId } = useSession.getState();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
@@ -28,7 +28,7 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown;
     res = await rawFetch(`/api${path}`, {
       ...rest,
       signal: rest.signal ?? controller.signal,
-      headers: { ...(json !== undefined ? { "content-type": "application/json" } : {}), ...(tenantId ? { "x-tenant-id": tenantId } : {}), ...(rest.headers as Record<string, string>) },
+      headers: { ...(json !== undefined ? { "content-type": "application/json" } : {}), ...(tenantId ? { "x-tenant-id": tenantId } : {}), ...(deviceId ? { "x-device-id": deviceId } : {}), ...(rest.headers as Record<string, string>) },
       body: json !== undefined ? JSON.stringify(json) : rest.body,
     });
   } catch {

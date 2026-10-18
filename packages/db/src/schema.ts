@@ -86,10 +86,20 @@ export const devices = pgTable(
     platform: text("platform").notNull(),
     /** Last receipt sequence issued on this device; incremented under the row lock. */
     receiptSeq: integer("receipt_seq").notNull().default(0),
+    /**
+     * Trust state. Only approved devices may record sales, refunds, drawer and stock
+     * movements; pending devices can sign in and read (dashboards), blocked ones nothing.
+     */
+    status: text("status", { enum: ["pending", "approved", "blocked"] }).notNull().default("pending"),
+    userAgent: text("user_agent"),
+    lastIp: text("last_ip"),
+    lastUserId: text("last_user_id"),
+    approvedBy: text("approved_by"),
+    approvedAt: ts("approved_at"),
     lastSeenAt: ts("last_seen_at"),
     createdAt: created(),
   },
-  (t) => [uniqueIndex("devices_store_code").on(t.storeId, t.code)],
+  (t) => [uniqueIndex("devices_store_code").on(t.storeId, t.code), index("devices_tenant_status").on(t.tenantId, t.status)],
 );
 
 export const memberships = pgTable(

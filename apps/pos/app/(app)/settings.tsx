@@ -22,7 +22,12 @@ import { toast } from "@/ui/toast";
 /* ------------------------------------------------------------------ types and constants */
 
 type TokenRow = { id: string; name: string; scopes: string[]; expiresAt: string | null; lastUsedAt: string | null; createdAt: string; owner: string };
-type DeviceRow = { id: string; code: string; name: string; platform: string; storeId: string; store: string; lastSeenAt: string | null; receiptSeq: number };
+type DeviceRow = { id: string; code: string; name: string; platform: string; storeId: string; store: string; lastSeenAt: string | null; receiptSeq: number; status: "pending" | "approved" | "blocked"; lastIp: string | null; lastUser: string | null };
+const DEVICE_STATUS: Record<DeviceRow["status"], { label: string; tone: "success" | "warning" | "danger" }> = {
+  approved: { label: "Approved", tone: "success" },
+  pending: { label: "Waiting for approval", tone: "warning" },
+  blocked: { label: "Blocked", tone: "danger" },
+};
 type Preset = "analyst" | "manager" | "custom";
 type Expiry = "30" | "90" | "365";
 
@@ -602,7 +607,24 @@ const DEVICE_COLUMNS: Column<DeviceRow>[] = [
   },
   { key: "store", header: "Store", phone: true, render: (r) => <Text variant="caption" tone="muted" numberOfLines={1}>{r.store}</Text> },
   { key: "platform", header: "Platform", phone: true, render: (r) => <Text variant="caption" tone="muted">{r.platform}</Text> },
-  { key: "seen", header: "Last seen", phone: true, render: (r) => <Text variant="caption" tone="muted">{ago(r.lastSeenAt)}</Text> },
+  { key: "status", header: "Status", phone: true, render: (r) => <Badge tone={DEVICE_STATUS[r.status].tone} label={DEVICE_STATUS[r.status].label} /> },
+  {
+    key: "seen",
+    header: "Last seen",
+    phone: true,
+    render: (r) => (
+      <Stack gap={0}>
+        <Text variant="caption" tone="muted">
+          {ago(r.lastSeenAt)}
+        </Text>
+        {r.lastUser || r.lastIp ? (
+          <Text variant="caption" tone="muted" numberOfLines={1}>
+            {[r.lastUser, r.lastIp].filter(Boolean).join(" · ")}
+          </Text>
+        ) : null}
+      </Stack>
+    ),
+  },
   {
     key: "receipts",
     header: "Receipts issued",
@@ -617,15 +639,43 @@ const DEVICE_COLUMNS: Column<DeviceRow>[] = [
 
 function DevicesSection() {
   const deviceId = useSession((s) => s.deviceId);
+  const can = useCan();
+  const qc = useQueryClient();
   const devices = useQuery({ queryKey: ["devices"], queryFn: ({ signal }) => api<DeviceRow[]>("/devices", { signal }), staleTime: 30_000 });
+  const decide = useMutation({
+    mutationFn: ({ id, to }: { id: string; to: "approve" | "block" }) => api(`/devices/${id}/${to}`, { method: "POST", json: {} }),
+    onSuccess: (_r, v) => {
+      toast.success(v.to === "approve" ? "Till approved. It can take sales now." : "Till blocked. It can no longer take sales.");
+      void qc.invalidateQueries({ queryKey: ["devices"] });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const columns: Column<DeviceRow>[] = can("store.settings")
+    ? [
+        ...DEVICE_COLUMNS,
+        {
+          key: "actions",
+          header: "",
+          align: "right",
+          render: (r) =>
+            r.status === "approved" ? (
+              r.id === deviceId ? null : <Button kind="ghost" size="sm" label="Block" onPress={() => decide.mutate({ id: r.id, to: "block" })} />
+            ) : (
+              <Button kind={r.status === "pending" ? "primary" : "secondary"} size="sm" label={r.status === "pending" ? "Approve" : "Unblock"} onPress={() => decide.mutate({ id: r.id, to: "approve" })} />
+            ),
+        },
+      ]
+    : DEVICE_COLUMNS;
+  const pending = devices.data?.filter((d) => d.status === "pending").length ?? 0;
   return (
-    <Section title="Devices" description="Tills registered to your stores. Each one numbers its receipts separately.">
+    <Section title="Devices" description="Only approved tills can take sales, refunds, drawer and stock movements. Any signed-in device can still read reports.">
+      {pending ? <Badge tone="warning" label={`${pending} till${pending > 1 ? "s" : ""} waiting for approval`} /> : null}
       {devices.error ? <ErrorNote message="Devices could not load." onRetry={() => void devices.refetch()} /> : null}
       <DataList
         inline
         label="Registered tills"
         rows={devices.data}
-        columns={DEVICE_COLUMNS}
+        columns={columns}
         keyOf={(r) => r.id}
         selectedKey={deviceId}
         loading={devices.isPending}

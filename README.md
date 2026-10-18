@@ -4,6 +4,7 @@ A universal, brand-customizable point of sale. Luxury retail is the flagship use
 
 - **Research:** market, flaws in current POS systems, UI/UX findings, opportunities and roadmap → [docs/RESEARCH.md](docs/RESEARCH.md)
 - **Product and design:** [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md), [docs/UI_CONVENTIONS.md](docs/UI_CONVENTIONS.md)
+- **Blueprint:** capability status, target architecture (TPS, MIS, DSS, EIS, CRM) and phased roadmap → [docs/BLUEPRINT.md](docs/BLUEPRINT.md)
 - **Architecture:** decisions, events and Kafka, edge gateway, Django and microservice readiness, data model, security, scaling → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Operations:** Docker, nginx, backups and restore drills → [docs/OPERATIONS.md](docs/OPERATIONS.md)
 - **API contract:** [docs/openapi.json](docs/openapi.json) (also served at `/api/openapi.json`)

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { FlatList, Pressable, View, type ViewStyle } from "react-native";
 import { formatMoney, uuidv7 } from "@luxury-pos/core";
-import { useStore } from "@/lib/queries";
+import { useCan, useStore } from "@/lib/queries";
+import { useOutbox } from "@/state/outbox";
+import { useSession } from "@/state/session";
 import { modKey } from "@/shell/useShortcuts";
 import { missingSerials, priceLines, useCart } from "@/state/cart";
 import { useHeld } from "@/state/held";
@@ -11,6 +13,10 @@ import { Badge, Button, EmptyState, focusRing, IconButton, Kbd, Money, Row, Stat
 import { Sheet } from "@/ui/Sheet";
 import { toast } from "@/ui/toast";
 import { LineEditor } from "./LineEditor";
+import { ApprovalSheet } from "./sheets";
+
+type VoidKind = "line_voided" | "quantity_reduced" | "sale_cleared";
+type PendingVoid = { kind: VoidKind; lines: { variantId: string; name: string; quantity: number; amount: number }[]; run: () => void };
 
 const ago = (at: number) => {
   const m = Math.round((Date.now() - at) / 60_000);
@@ -30,17 +36,44 @@ export function Ticket({ onPay, onClient, onDiscount, tendering, onClose }: { on
   const { lines, orderDiscount, client, setQuantity, remove, clear, setClient, focusKey, focus, restore } = useCart();
   const held = useHeld();
   const [recall, setRecall] = useState(false);
+  const can = useCan();
+  const deviceId = useSession((st) => st.deviceId);
+  const [pendingVoid, setPendingVoid] = useState<PendingVoid | null>(null);
   if (!store) return null;
   const heldHere = held.items.filter((h) => h.storeId === store.id);
   const unserialed = missingSerials(lines);
   const snapshot = () => ({ lines, orderDiscount, client });
 
-  // Destructive but reversible: act at once and offer Undo, instead of an "are you sure?" dialog.
-  const clearSale = () => {
-    const before = snapshot();
-    clear();
-    toast.undo("Sale cleared", () => restore(before));
+  /**
+   * Taking anything off a sale (fewer units, a line, the whole sale) is a void:
+   * staff with sale.void do it directly, everyone else needs a manager's PIN.
+   * Either way it is written to the audit trail through the outbox, so it is
+   * recorded even when the till is offline.
+   */
+  const guardVoid = (v: PendingVoid) => {
+    if (can("sale.void")) return commitVoid(v, false);
+    setPendingVoid(v);
   };
+  const commitVoid = (v: PendingVoid, approved: boolean) => {
+    v.run();
+    if (!deviceId) return;
+    const id = uuidv7();
+    useOutbox.getState().enqueue({ id, path: "/till-events", label: v.kind === "sale_cleared" ? "Sale cleared" : "Line voided", body: { id, action: v.kind, storeId: store.id, deviceId, lines: v.lines, approved, at: new Date().toISOString() } });
+    void useOutbox.getState().flush();
+  };
+  const lineAmount = (key: string) => priceLines(lines, orderDiscount, store.currency, store.taxMode).lines.find((x) => x.id === key)?.total ?? 0;
+
+  // Reversible locally: act, then offer Undo (re-adding never needs approval).
+  const clearSale = () =>
+    guardVoid({
+      kind: "sale_cleared",
+      lines: lines.map((l) => ({ variantId: l.item.variantId, name: l.item.name, quantity: l.quantity, amount: lineAmount(l.key) })),
+      run: () => {
+        const before = snapshot();
+        clear();
+        toast.undo("Sale cleared", () => restore(before));
+      },
+    });
   const holdSale = () => {
     held.hold({ id: uuidv7(), at: Date.now(), storeId: store.id, ...snapshot() });
     clear();
@@ -177,7 +210,17 @@ export function Ticket({ onPay, onClient, onDiscount, tendering, onClose }: { on
                 </Text>
               ) : (
                 <Row gap={1}>
-                  <IconButton label={`One fewer ${l.item.name}`} size="sm" onPress={() => setQuantity(l.key, l.quantity - 1)}>
+                  <IconButton
+                    label={`One fewer ${l.item.name}`}
+                    size="sm"
+                    onPress={() =>
+                      guardVoid({
+                        kind: l.quantity > 1 ? "quantity_reduced" : "line_voided",
+                        lines: [{ variantId: l.item.variantId, name: l.item.name, quantity: 1, amount: Math.round(lineAmount(l.key) / l.quantity) }],
+                        run: () => setQuantity(l.key, l.quantity - 1),
+                      })
+                    }
+                  >
                     <Minus size={16} color={t.color.text} />
                   </IconButton>
                   <Text variant="label" style={{ minWidth: 28, textAlign: "center", fontVariant: ["tabular-nums"] }} accessibilityLabel={`Quantity ${l.quantity}`}>
@@ -193,11 +236,17 @@ export function Ticket({ onPay, onClient, onDiscount, tendering, onClose }: { on
                     label={`Remove ${l.item.name}`}
                     size="sm"
                     tone="danger"
-                    onPress={() => {
-                      const before = snapshot();
-                      remove(l.key);
-                      toast.undo(`${l.item.name} removed`, () => restore(before));
-                    }}
+                    onPress={() =>
+                      guardVoid({
+                        kind: "line_voided",
+                        lines: [{ variantId: l.item.variantId, name: l.item.name, quantity: l.quantity, amount: lineAmount(l.key) }],
+                        run: () => {
+                          const before = snapshot();
+                          remove(l.key);
+                          toast.undo(`${l.item.name} removed`, () => restore(before));
+                        },
+                      })
+                    }
                   >
                     <Trash size={16} color={t.color.danger} />
                   </IconButton>
@@ -251,6 +300,16 @@ export function Ticket({ onPay, onClient, onDiscount, tendering, onClose }: { on
           </Row>
         )}
       </View>
+      <ApprovalSheet
+        visible={!!pendingVoid}
+        action="void"
+        storeId={store.id}
+        onClose={() => setPendingVoid(null)}
+        onApproved={() => {
+          if (pendingVoid) commitVoid(pendingVoid, true);
+          setPendingVoid(null);
+        }}
+      />
       <Sheet visible={recall} onClose={() => setRecall(false)} title="Held sales" width={460}>
         {heldHere.map((h) => {
           const total = priceLines(h.lines, h.orderDiscount, store.currency, store.taxMode).total;

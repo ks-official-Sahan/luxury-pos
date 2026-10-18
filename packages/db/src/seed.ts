@@ -57,8 +57,8 @@ export async function seedDemo(db: Db, opts: { password?: string; pin?: string; 
     const [till] = await tx
       .insert(devices)
       .values([
-        { id: uuidv7(), tenantId: t, storeId: paris!.id, code: "T1", name: "Salon till", platform: "ios" },
-        { id: uuidv7(), tenantId: t, storeId: dubai!.id, code: "T1", name: "Front desk", platform: "windows" },
+        { id: uuidv7(), tenantId: t, storeId: paris!.id, code: "T1", name: "Salon till", platform: "ios", status: "approved" as const, approvedAt: new Date() },
+        { id: uuidv7(), tenantId: t, storeId: dubai!.id, code: "T1", name: "Front desk", platform: "windows", status: "approved" as const, approvedAt: new Date() },
       ])
       .returning();
 

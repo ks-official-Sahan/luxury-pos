@@ -97,7 +97,13 @@ export async function listStaff(infra: Infra, actor: Actor) {
 export async function listDevices(infra: Infra, actor: Actor) {
   assertCan(actor, "store.settings");
   return withTenant(infra.db, actor.tenantId, (tx) =>
-    tx.select({ id: devices.id, code: devices.code, name: devices.name, platform: devices.platform, storeId: devices.storeId, store: stores.name, lastSeenAt: devices.lastSeenAt, receiptSeq: devices.receiptSeq }).from(devices).innerJoin(stores, eq(stores.id, devices.storeId)).orderBy(stores.name, devices.code),
+    tx
+      .select({ id: devices.id, code: devices.code, name: devices.name, platform: devices.platform, storeId: devices.storeId, store: stores.name, lastSeenAt: devices.lastSeenAt, receiptSeq: devices.receiptSeq, status: devices.status, lastIp: devices.lastIp, lastUser: users.name })
+      .from(devices)
+      .innerJoin(stores, eq(stores.id, devices.storeId))
+      .leftJoin(users, eq(users.id, devices.lastUserId))
+      // Devices waiting for approval first: they are the ones that need someone.
+      .orderBy(sql`${devices.status} = 'pending' desc`, stores.name, devices.code),
   );
 }
 

@@ -56,20 +56,38 @@ export async function signUpTenant(
       .values({ tenantId: tenant!.id, code: "S01", name: input.storeName, currency: input.currency, taxMode: input.taxMode, timezone: input.timezone })
       .returning();
     await tx.insert(memberships).values({ tenantId: tenant!.id, userId: user.id, role: "OWNER" });
-    const [device] = await tx.insert(devices).values({ id: uuidv7(), tenantId: tenant!.id, storeId: store!.id, code: "D01", name: "Main till", platform: "web" }).returning();
+    const [device] = await tx.insert(devices).values({ id: uuidv7(), tenantId: tenant!.id, storeId: store!.id, code: "D01", name: "Main till", platform: "web", status: "approved", approvedBy: user.id, approvedAt: new Date() }).returning();
     return { tenantId: tenant!.id, storeId: store!.id, deviceId: device!.id, userId: user.id };
   });
 }
 
-export async function registerDevice(infra: Infra, actor: Actor, input: { id: string; storeId: string; name: string; platform: string }) {
-  assertCan(actor, "store.settings", input.storeId);
+/**
+ * A device asks to become a till for a store. Anyone on the team may ask; it stays
+ * `pending` (can sign in and read, cannot transact) until someone with store.settings
+ * approves it. A manager registering a device approves it at the same time.
+ * Re-registering never changes a decision already taken (approved stays, blocked stays).
+ */
+export async function registerDevice(infra: Infra, actor: Actor, input: { id: string; storeId: string; name: string; platform: string }, meta: { ip: string | null; userAgent: string | null } = { ip: null, userAgent: null }) {
+  assertCan(actor, "sale.create", input.storeId);
+  const autoApprove = allowed(actor, "store.settings", input.storeId) && actor.via === "session";
   return withTenant(infra.db, actor.tenantId, async (tx) => {
     const [{ n }] = (await tx.select({ n: sql<number>`count(*)::int` }).from(devices).where(eq(devices.storeId, input.storeId))) as [{ n: number }];
     const [row] = await tx
       .insert(devices)
-      .values({ ...input, tenantId: actor.tenantId, code: `D${String(n + 1).padStart(2, "0")}` })
-      .onConflictDoUpdate({ target: devices.id, set: { name: input.name, lastSeenAt: new Date() } })
+      .values({
+        ...input,
+        tenantId: actor.tenantId,
+        code: `D${String(n + 1).padStart(2, "0")}`,
+        status: autoApprove ? "approved" : "pending",
+        approvedBy: autoApprove ? actor.userId : null,
+        approvedAt: autoApprove ? new Date() : null,
+        lastIp: meta.ip,
+        userAgent: meta.userAgent,
+        lastUserId: actor.userId,
+      })
+      .onConflictDoUpdate({ target: devices.id, set: { name: input.name, lastSeenAt: new Date(), lastIp: meta.ip, lastUserId: actor.userId } })
       .returning();
+    await tx.insert(posAuditEvents).values({ tenantId: actor.tenantId, storeId: input.storeId, actorId: actor.userId, action: row!.status === "approved" ? "device.registered" : "device.requested", entity: "device", entityId: row!.id, data: { ip: meta.ip, platform: input.platform } });
     return row;
   });
 }
@@ -166,4 +184,29 @@ export async function revokeApiToken(infra: Infra, actor: Actor, id: string) {
     if (!rows.length) throw notFound("token");
     return { ok: true };
   });
+}
+
+/**
+ * Things that happen on a till before a sale exists (a line voided, a quantity cut,
+ * a sale cleared). They leave no order behind, so they are written to the audit
+ * trail here; approvals of the same actions are already logged as overrides.
+ */
+export async function recordTillEvent(
+  infra: Infra,
+  actor: Actor,
+  input: { id: string; action: "line_voided" | "quantity_reduced" | "sale_cleared"; storeId: string; deviceId: string; lines: { variantId: string; name: string; quantity: number; amount: number }[]; approved: boolean; at: string },
+) {
+  assertCan(actor, "sale.create", input.storeId);
+  await withTenant(infra.db, actor.tenantId, (tx) =>
+    tx.insert(posAuditEvents).values({
+      tenantId: actor.tenantId,
+      storeId: input.storeId,
+      actorId: actor.userId,
+      action: `till.${input.action}`,
+      entity: "device",
+      entityId: input.deviceId,
+      data: { eventId: input.id, lines: input.lines, approvedByManager: input.approved, at: input.at, value: input.lines.reduce((s, l) => s + l.amount, 0) },
+    }),
+  );
+  return { ok: true };
 }
