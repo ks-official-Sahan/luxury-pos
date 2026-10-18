@@ -366,6 +366,7 @@ export const orders = pgTable(
   },
   (t) => [
     index("orders_store_created").on(t.tenantId, t.storeId, t.createdAt),
+    index("orders_tenant_created_id").on(t.tenantId, t.createdAt, t.id),
     index("orders_customer").on(t.customerId, t.createdAt),
     index("orders_staff").on(t.tenantId, t.staffId, t.createdAt),
     uniqueIndex("orders_receipt").on(t.tenantId, t.receiptNo),

@@ -29,6 +29,7 @@ import type { Infra } from "../infra";
 import { allowed, assertCan, type Actor } from "../lib/context";
 import { AppError, conflict, notFound } from "../lib/errors";
 import { verifyOverride } from "./overrides";
+import { emit } from "../events/emit";
 
 /** `array[$1, $2, ...]::type[]` — drizzle expands a bare JS array into a parameter list, not a Postgres array. */
 const pgArray = (values: readonly (string | number)[], type: "uuid" | "int") =>
@@ -284,6 +285,7 @@ export async function createOrder(infra: Infra, actor: Actor, input: CreateOrder
       entityId: order.id,
       data: { total: priced.total, approvedBy, offline: Date.now() - createdAt.getTime() > 60_000 },
     });
+    await emit(tx, actor.tenantId, "pos.order.created.v1", { orderId: order.id, storeId: store.id, receiptNo: order.receiptNo, total: priced.total, currency: store.currency, customerId: customer?.id ?? null, cashierId: actor.userId, lines: lineRows.length }, { storeId: store.id });
 
     return { ...order, replayed: false as const, changeDue: settlement.changeDue, pointsEarned: earned };
   });
@@ -347,6 +349,7 @@ export async function refundOrder(infra: Infra, actor: Actor, input: RefundInput
       }
     }
     await tx.insert(posAuditEvents).values({ tenantId: actor.tenantId, storeId: order.storeId, actorId: actor.userId, action: "order.refunded", entity: "order", entityId: order.id, data: { total, approvedBy, reason: input.reason } });
+    await emit(tx, actor.tenantId, "pos.order.refunded.v1", { refundId: input.id, orderId: order.id, storeId: order.storeId, total, currency: order.currency }, { storeId: order.storeId });
     return { id: input.id, total, replayed: false as const };
   });
 }

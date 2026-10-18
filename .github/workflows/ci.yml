@@ -1,35 +1,180 @@
 name: CI
+
 on:
   push:
-    branches: [master, main]
+    branches: [main, master, feat/pos-foundation]
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
+    name: Typecheck and unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            .turbo
+            node_modules/.cache/turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+  e2e:
+    name: Postgres end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     services:
       postgres:
-        image: postgres:16
-        env: { POSTGRES_PASSWORD: postgres }
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
         ports: ["5432:5432"]
-        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       PGPASSWORD: postgres
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm test
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
       - name: Database with RLS (owner + non-superuser app role)
         run: |
           psql -h localhost -U postgres -c "create role pos login password 'pos' createdb" -c "create role app_user login password 'app'" -c "create database luxury_pos owner pos"
           DATABASE_URL=postgres://pos:pos@localhost:5432/luxury_pos pnpm --filter @luxury-pos/db migrate
           psql -h localhost -U postgres -d luxury_pos -c "grant usage on schema public to app_user; grant select,insert,update,delete on all tables in schema public to app_user; grant usage,select on all sequences in schema public to app_user;"
+
       - name: End-to-end
         run: pnpm --filter @luxury-pos/api test
-        env: { TEST_DATABASE_URL: "postgres://app_user:app@localhost:5432/luxury_pos" }
-      - name: Web build
+        env:
+          TEST_DATABASE_URL: postgres://app_user:app@localhost:5432/luxury_pos
+
+  web:
+    name: Web build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web
         run: pnpm --filter @luxury-pos/pos build:web
+
+      - name: Upload web bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-dist-${{ github.sha }}
+          path: apps/pos/dist
+          if-no-files-found: error
+          retention-days: 7
+
+  edge:
+    name: Edge worker typecheck and dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm --filter @luxury-pos/edge typecheck
+
+      - name: Unit tests
+        run: pnpm --filter @luxury-pos/edge test
+
+      - name: Web build (static assets the worker serves)
+        run: pnpm --filter @luxury-pos/pos build:web
+
+      - name: Wrangler dry-run deploy
+        run: pnpm --filter @luxury-pos/edge exec wrangler deploy --dry-run --outdir dist
+
+  docker:
+    name: Docker build (${{ matrix.image }})
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [api, web]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/${{ matrix.image }}.Dockerfile
+          push: false
+          tags: luxury-pos/${{ matrix.image }}:pr-${{ github.event.pull_request.number }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}

@@ -6,6 +6,7 @@ import { dailyVariantSales, posAuditEvents, products, stockLevels, stockMovement
 import type { Infra } from "../infra";
 import { assertCan, type Actor } from "../lib/context";
 import { AppError, conflict } from "../lib/errors";
+import { emit } from "../events/emit";
 
 type AdjustInput = z.infer<typeof stockAdjustSchema>;
 type TransferInput = z.infer<typeof transferSchema>;
@@ -38,6 +39,7 @@ export async function adjustStock(infra: Infra, actor: Actor, input: AdjustInput
       .onConflictDoUpdate({ target: [stockLevels.storeId, stockLevels.variantId], set: { onHand: sql`${stockLevels.onHand} + ${qty}`, avgCost, updatedAt: sql`now()` } })
       .returning();
     await tx.insert(posAuditEvents).values({ tenantId: actor.tenantId, storeId: input.storeId, actorId: actor.userId, action: `stock.${input.type}`, entity: "variant", entityId: input.variantId, data: { quantity: qty, reason: input.reason ?? null } });
+    await emit(tx, actor.tenantId, "pos.stock.adjusted.v1", { storeId: input.storeId, reason: input.type, changes: [{ variantId: input.variantId, delta: qty }] }, { storeId: input.storeId });
     return { replayed: false as const, level: next };
   });
 }
@@ -69,6 +71,8 @@ export async function transferStock(infra: Infra, actor: Actor, input: TransferI
       .values(movements.map((m) => ({ tenantId: actor.tenantId, storeId: m.storeId, variantId: m.variantId, onHand: m.quantity, avgCost: bySource.get(m.variantId)?.avgCost ?? 0 })))
       .onConflictDoUpdate({ target: [stockLevels.storeId, stockLevels.variantId], set: { onHand: sql`${stockLevels.onHand} + excluded.on_hand`, updatedAt: sql`now()` } });
     await tx.insert(posAuditEvents).values({ tenantId: actor.tenantId, storeId: input.fromStoreId, actorId: actor.userId, action: "stock.transfer", entity: "transfer", entityId: input.id, data: { to: input.toStoreId, lines: input.lines.length } });
+    for (const [storeId, sign] of [[input.fromStoreId, -1], [input.toStoreId, 1]] as const)
+      await emit(tx, actor.tenantId, "pos.stock.adjusted.v1", { storeId, reason: "transfer", changes: input.lines.map((l) => ({ variantId: l.variantId, delta: sign * l.quantity })) }, { storeId });
     return { id: input.id, lines: input.lines.length };
   });
 }

@@ -1,9 +1,12 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { formatMoney } from "@luxury-pos/core";
 import { orderLines, orders, outbox, stores, tenants, withSystem } from "@luxury-pos/db";
 import { renderEmail } from "@sahan-sac/email-kit/layout";
 import { loadEnv } from "./env";
 import { createInfra, type Infra } from "./infra";
+import { EVENT_TOPIC_PREFIX } from "./events/emit";
+import { createEventSink, type EventSink } from "./events/sink";
+import type { CloudEvent } from "@luxury-pos/contracts";
 
 /**
  * Outbox worker. `FOR UPDATE SKIP LOCKED` lets any number of workers run side by
@@ -42,14 +45,30 @@ async function deliverReceipt(infra: Infra, job: Job) {
 
 const handlers: Record<string, (infra: Infra, job: Job) => Promise<void>> = { "receipt.email": deliverReceipt };
 
-async function tick(infra: Infra): Promise<number> {
+async function tick(infra: Infra, sink: EventSink): Promise<number> {
   return withSystem(infra.db, async (tx) => {
     const jobs = (
       await tx.execute<Job>(sql`select id, tenant_id as "tenantId", topic, payload, attempts from ${outbox}
         where processed_at is null and available_at <= now() and attempts < 8
-        order by id limit 20 for update skip locked`)
+        order by id limit 200 for update skip locked`)
     ).rows;
-    for (const job of jobs) {
+    // Domain events go to the broker as one batch; on failure the whole batch retries (consumers dedupe on event id).
+    const events = jobs.filter((j) => j.topic.startsWith(EVENT_TOPIC_PREFIX));
+    if (events.length) {
+      const ids = events.map((e) => e.id);
+      try {
+        await sink.publish(events.map((e) => e.payload as unknown as CloudEvent));
+        await tx.update(outbox).set({ processedAt: new Date() }).where(inArray(outbox.id, ids));
+      } catch (err) {
+        const attempts = Math.max(...events.map((e) => e.attempts));
+        await tx
+          .update(outbox)
+          .set({ attempts: sql`${outbox.attempts} + 1`, lastError: String(err).slice(0, 500), availableAt: sql`now() + make_interval(secs => ${2 ** attempts * 30})` })
+          .where(inArray(outbox.id, ids));
+      }
+    }
+    // Slow side effects (email, webhooks): a few per tick; the rest stay pending for the next tick or another worker.
+    for (const job of jobs.filter((j) => !j.topic.startsWith(EVENT_TOPIC_PREFIX)).slice(0, 20)) {
       try {
         const handler = handlers[job.topic];
         if (!handler) throw new Error(`no handler for ${job.topic}`);
@@ -68,11 +87,14 @@ async function tick(infra: Infra): Promise<number> {
 }
 
 const infra = createInfra(loadEnv());
+const sink = await createEventSink(infra.env);
+console.log(`[worker] event sink: ${sink.name}`);
 let running = true;
 process.on("SIGTERM", () => (running = false));
 process.on("SIGINT", () => (running = false));
 while (running) {
-  const n = await tick(infra).catch((err) => (console.error("[worker]", err), 0));
+  const n = await tick(infra, sink).catch((err) => (console.error("[worker]", err), 0));
   if (n === 0) await new Promise((r) => setTimeout(r, 2_000));
 }
+await sink.close();
 await infra.pool.end();

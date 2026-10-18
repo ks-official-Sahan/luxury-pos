@@ -5,6 +5,7 @@ import { customers, orderLines, orders, pointLedger, withTenant } from "@luxury-
 import type { Infra } from "../infra";
 import { allowed, assertCan, type Actor } from "../lib/context";
 import { AppError, conflict, notFound } from "../lib/errors";
+import { emit } from "../events/emit";
 
 type CustomerInput = z.infer<typeof customerSchema>;
 
@@ -27,6 +28,7 @@ export async function createCustomer(infra: Infra, actor: Actor, input: Customer
       .onConflictDoNothing()
       .returning();
     if (!row) throw conflict("email_taken", "a client with this email exists");
+    await emit(tx, actor.tenantId, "pos.customer.upserted.v1", { customerId: row.id });
     return mask(actor, row);
   });
 }
@@ -36,6 +38,7 @@ export async function updateCustomer(infra: Infra, actor: Actor, id: string, pat
   return withTenant(infra.db, actor.tenantId, async (tx) => {
     const [row] = await tx.update(customers).set({ ...patch, email: patch.email?.toLowerCase(), updatedAt: new Date() }).where(eq(customers.id, id)).returning();
     if (!row) throw notFound("customer");
+    await emit(tx, actor.tenantId, "pos.customer.upserted.v1", { customerId: row.id });
     return mask(actor, row);
   });
 }

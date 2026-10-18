@@ -13,6 +13,7 @@ import {
   signedQuantity,
   tierFor,
   uuidv7,
+  uuidv7Time,
   weightedAverageCost,
   type LoyaltyProgram,
 } from "./index";
@@ -149,5 +150,12 @@ describe("uuidv7", () => {
     const b = uuidv7(2_000);
     expect(a < b).toBe(true);
     expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+  it("stays strictly increasing within one millisecond and across clock steps back", () => {
+    const now = Date.now() + 10_000;
+    const ids = Array.from({ length: 5000 }, (_, i) => uuidv7(i === 2500 ? now - 5_000 : now));
+    for (let i = 1; i < ids.length; i++) expect(ids[i]! > ids[i - 1]!).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(uuidv7Time(ids[0]!)).toBe(now);
   });
 });

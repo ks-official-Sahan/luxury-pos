@@ -1,0 +1,117 @@
+# Rendered by the nginx image entrypoint (envsubst on API_* vars only).
+# API_FALLBACK_UPSTREAM: 'backup' server, used only when the primary fails (e.g. a future Django backend).
+upstream api {
+    server ${API_UPSTREAM} max_fails=3 fail_timeout=10s;
+    server ${API_FALLBACK_UPSTREAM} backup;
+    keepalive 64;
+}
+
+server {
+    listen 80 default_server;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # HSTS: enable only when TLS terminates in front of this container.
+    # add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Inherited by every proxied location. /mcp repeats them to override Connection.
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Request-Id $request_id;
+    proxy_set_header Connection "";
+    proxy_http_version 1.1;
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 30s;
+    proxy_read_timeout 60s;
+    proxy_next_upstream_tries 2;
+    proxy_next_upstream_timeout 5s;
+
+    location ~ /\. {
+        access_log off;
+        return 404;
+    }
+
+    # Hashed build output: immutable. A missing hashed file is a 404, never index.html.
+    location ^~ /_expo/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header X-Frame-Options "DENY" always;
+    }
+
+    location ^~ /assets/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header X-Frame-Options "DENY" always;
+    }
+
+    # SPA shell: always revalidate so new deploys are picked up.
+    location / {
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header X-Frame-Options "DENY" always;
+    }
+
+    location = /healthz {
+        access_log off;
+        proxy_pass http://api;
+    }
+
+    # Brute-force protection on auth and signup.
+    location ^~ /api/auth/ {
+        limit_req zone=auth burst=5 nodelay;
+        proxy_pass http://api;
+    }
+
+    location = /api/signup {
+        limit_req zone=auth burst=5 nodelay;
+        proxy_pass http://api;
+    }
+
+    # Cacheable public reads (e.g. store brand theme). Authenticated or cookie-setting responses are never stored.
+    location ^~ /api/public/ {
+        limit_req zone=apilimit burst=60 nodelay;
+        proxy_cache api;
+        proxy_cache_key "$scheme$host$request_uri";
+        proxy_cache_methods GET HEAD;
+        proxy_cache_valid 200 60s;
+        proxy_cache_use_stale error timeout updating http_502 http_503 http_504;
+        proxy_cache_background_update on;
+        proxy_cache_lock on;
+        proxy_cache_bypass $http_authorization;
+        proxy_no_cache $http_authorization $upstream_http_set_cookie;
+        add_header X-Cache-Status $upstream_cache_status always;
+        proxy_pass http://api;
+    }
+
+    # Generic API: never cached. Retry on connect/timeout/5xx only for idempotent methods (nginx default).
+    location /api/ {
+        limit_req zone=apilimit burst=60 nodelay;
+        proxy_next_upstream error timeout http_502 http_503;
+        proxy_pass http://api;
+    }
+
+    # MCP streaming: no buffering, long reads, upgrade-aware Connection header.
+    location ^~ /mcp {
+        limit_req zone=apilimit burst=60 nodelay;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-Id $request_id;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_pass http://api;
+    }
+}

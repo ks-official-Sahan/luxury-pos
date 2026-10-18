@@ -25,6 +25,14 @@ const schema = z.object({
   /** Directory of the exported web app (apps/pos/dist) to serve on the same origin. */
   WEB_DIST: z.string().optional(),
   TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
+  /** Event streaming (optional). Empty = domain events stay in the outbox only. */
+  KAFKA_BROKERS: list,
+  KAFKA_CLIENT_ID: z.string().default("luxury-pos"),
+  KAFKA_SSL: z.stringbool().default(false),
+  KAFKA_SASL_MECHANISM: z.enum(["plain", "scram-sha-256", "scram-sha-512"]).default("plain"),
+  KAFKA_SASL_USERNAME: z.string().optional(),
+  KAFKA_SASL_PASSWORD: z.string().optional(),
+  EVENTS_TOPIC_PREFIX: z.string().max(40).default(""),
 });
 
 export type Env = z.infer<typeof schema>;

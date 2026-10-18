@@ -8,7 +8,8 @@ import { bootstrap } from "./services/admin";
 import { searchCatalog } from "./services/catalog";
 import { customerProfile, searchCustomers } from "./services/customers";
 import { askInsights } from "./services/insights";
-import { adjustStock, lowStock } from "./services/inventory";
+import { adjustStock, lowStock, transferStock } from "./services/inventory";
+import { listAudit, listOrders, listStaff, orderDetail, roleMatrix } from "./services/backoffice";
 import { anomalies, salesSummary, staffPerformance, topProducts } from "./services/reports";
 
 const day = z.iso.date().describe("YYYY-MM-DD");
@@ -31,7 +32,7 @@ async function run(fn: () => Promise<unknown>) {
 
 export function createPosMcpServer(infra: Infra, actor: Actor): McpServer {
   const server = new McpServer(
-    { name: "luxury-pos", version: "0.1.0" },
+    { name: "luxury-pos", version: "0.2.0" },
     { instructions: "Store management for staff. Amounts are integers in the currency's minor unit (cents). Use list_stores first to get store ids. Write tools need confirm=true; call them without it to preview." },
   );
   const ro = { readOnlyHint: true, openWorldHint: false } as const;
@@ -113,6 +114,58 @@ export function createPosMcpServer(infra: Infra, actor: Actor): McpServer {
         if (!confirm) return { preview: true, change: { storeId, variantId, quantity, reason }, note: "Call again with confirm=true to apply. It is audited under your name." };
         return adjustStock(infra, actor, { id: uuidv7(), storeId, variantId, type: "adjust", quantity, reason: `[mcp] ${reason}` });
       }),
+  );
+
+  server.registerTool(
+    "recent_orders",
+    {
+      description: "Orders newest first, with store, associate, client, items and refund state. Page with the returned nextCursor.",
+      inputSchema: z.object({ storeId, status: z.enum(["completed", "partially_refunded", "refunded", "voided"]).optional(), receiptNo: z.string().max(40).optional(), cursor: z.string().max(200).optional(), limit: z.number().int().min(1).max(50).default(20) }),
+      annotations: ro,
+    },
+    ({ storeId, status, receiptNo, cursor, limit }) => run(() => listOrders(infra, actor, { storeId, status, q: receiptNo, cursor, limit })),
+  );
+
+  server.registerTool("order_detail", { description: "One order with its lines, tenders and refunds.", inputSchema: z.object({ orderId: z.uuid() }), annotations: ro }, ({ orderId }) => run(() => orderDetail(infra, actor, orderId)));
+
+  server.registerTool("team", { description: "Team members, their roles, store scope and whether they have a till PIN.", inputSchema: z.object({}), annotations: ro }, () => run(() => listStaff(infra, actor)));
+
+  server.registerTool("role_matrix", { description: "What each role may do in this business (defaults plus this business's edits).", inputSchema: z.object({}), annotations: ro }, () => run(() => roleMatrix(infra, actor)));
+
+  server.registerTool(
+    "audit_trail",
+    { description: "Who did what and when: sales, refunds, overrides, stock, staff and branding changes. Filter by action prefix such as 'order.' or 'stock.'.", inputSchema: z.object({ action: z.string().max(60).optional(), cursor: z.string().max(200).optional(), limit: z.number().int().min(1).max(100).default(30) }), annotations: ro },
+    ({ action, cursor, limit }) => run(() => listAudit(infra, actor, { action, cursor, limit })),
+  );
+
+  server.registerTool(
+    "transfer_stock",
+    {
+      description: "Move stock between two stores (both sides or neither). Without confirm=true it only previews.",
+      inputSchema: z.object({ fromStoreId: z.uuid(), toStoreId: z.uuid(), lines: z.array(z.object({ variantId: z.uuid(), quantity: z.number().int().min(1).max(10_000) })).min(1).max(50), confirm: z.boolean().default(false) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    ({ fromStoreId, toStoreId, lines, confirm }) =>
+      run(async () => {
+        if (!confirm) return { preview: true, change: { fromStoreId, toStoreId, lines }, note: "Call again with confirm=true to apply. It is audited under your name." };
+        return transferStock(infra, actor, { id: uuidv7(), fromStoreId, toStoreId, lines });
+      }),
+  );
+
+  server.registerPrompt(
+    "daily_briefing",
+    { title: "Daily store briefing", description: "Yesterday's results, best sellers, low stock and anything unusual, for one store or all.", argsSchema: { storeId: z.string().optional() } },
+    ({ storeId }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Prepare a short morning briefing${storeId ? ` for store ${storeId}` : " across all my stores"}. Use sales_summary for yesterday and the same weekday last week, top_products for yesterday, low_stock for each store, and anomalies for the last 7 days. Lead with the three things a manager should act on today. Amounts are minor units; use format_money.`,
+          },
+        },
+      ],
+    }),
   );
 
   server.registerTool(
