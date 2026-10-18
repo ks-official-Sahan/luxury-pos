@@ -1,0 +1,35 @@
+name: CI
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Database with RLS (owner + non-superuser app role)
+        run: |
+          psql -h localhost -U postgres -c "create role pos login password 'pos' createdb" -c "create role app_user login password 'app'" -c "create database luxury_pos owner pos"
+          DATABASE_URL=postgres://pos:pos@localhost:5432/luxury_pos pnpm --filter @luxury-pos/db migrate
+          psql -h localhost -U postgres -d luxury_pos -c "grant usage on schema public to app_user; grant select,insert,update,delete on all tables in schema public to app_user; grant usage,select on all sequences in schema public to app_user;"
+      - name: End-to-end
+        run: pnpm --filter @luxury-pos/api test
+        env: { TEST_DATABASE_URL: "postgres://app_user:app@localhost:5432/luxury_pos" }
+      - name: Web build
+        run: pnpm --filter @luxury-pos/pos build:web

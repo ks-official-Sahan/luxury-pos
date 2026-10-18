@@ -122,8 +122,8 @@ export async function staffPerformance(infra: Infra, actor: Actor, range: Range)
 }
 
 /**
- * Loss-prevention signals: who gives the most overrides, refunds and discounts
- * relative to their sales. Rules-based (explainable) before any ML.
+ * Loss-prevention signals: refunds, overrides, stock adjustments and drawer closes
+ * per staff member, with simple threshold flags. Rules-based (explainable) before any ML.
  */
 export async function anomalies(infra: Infra, actor: Actor, range: Range) {
   assertCan(actor, "reports.read", range.storeId);
