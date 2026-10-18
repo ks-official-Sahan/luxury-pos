@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # One image for api, worker and migrate. Runs TS source via tsx (no build step).
 
-FROM node:22-bookworm-slim AS base
+FROM node:26-bookworm-slim AS base
 ENV CI=true
 RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
 WORKDIR /app
@@ -18,7 +18,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
     pnpm install --frozen-lockfile --store-dir /pnpm-store \
       --filter "@luxury-pos/api..." --filter "@luxury-pos/db..."
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:26-bookworm-slim AS runtime
 RUN apt-get update \
  && apt-get install -y --no-install-recommends tini \
  && rm -rf /var/lib/apt/lists/*

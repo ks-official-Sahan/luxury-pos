@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Expo web static build served by nginx. EXPO_PUBLIC_API_URL="" = same origin (nginx proxies /api).
 
-FROM node:22-bookworm-slim AS builder
+FROM node:26-bookworm-slim AS builder
 ENV CI=true
 RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
 WORKDIR /app
