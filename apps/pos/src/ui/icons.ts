@@ -63,3 +63,10 @@ export { WarningIcon as Warning } from "phosphor-react-native/src/icons/Warning"
 export { WarningCircleIcon as WarningCircle } from "phosphor-react-native/src/icons/WarningCircle";
 export { XIcon as X } from "phosphor-react-native/src/icons/X";
 export { IdentificationBadgeIcon as IdentificationBadge } from "phosphor-react-native/src/icons/IdentificationBadge";
+export { ArrowSquareOutIcon as ArrowSquareOut } from "phosphor-react-native/src/icons/ArrowSquareOut";
+export { ArrowsClockwiseIcon as ArrowsClockwise } from "phosphor-react-native/src/icons/ArrowsClockwise";
+export { CodeIcon as Code } from "phosphor-react-native/src/icons/Code";
+export { RobotIcon as Robot } from "phosphor-react-native/src/icons/Robot";
+export { ArrowLineDownIcon as ArrowLineDown } from "phosphor-react-native/src/icons/ArrowLineDown";
+export { LockIcon as Lock } from "phosphor-react-native/src/icons/Lock";
+export { PhoneIcon as Phone } from "phosphor-react-native/src/icons/Phone";

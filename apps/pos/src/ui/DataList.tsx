@@ -30,6 +30,7 @@ export function DataList<T>({
   onEndReached,
   footer,
   label,
+  inline,
 }: {
   rows: T[] | undefined;
   columns: Column<T>[];
@@ -41,6 +42,8 @@ export function DataList<T>({
   onEndReached?: () => void;
   footer?: ReactElement | null;
   label: string;
+  /** Short lists inside a scrolling page: plain rows, no nested virtualised list. */
+  inline?: boolean;
 }) {
   const t = useTokens();
   const { wide } = useLayout();
@@ -65,6 +68,15 @@ export function DataList<T>({
       </View>
     );
 
+  if (inline)
+    return (
+      <View accessibilityLabel={label}>
+        {header}
+        {rows?.length ? rows.map((item) => <View key={keyOf(item)}>{renderRow(item)}</View>) : empty}
+        {footer}
+      </View>
+    );
+
   return (
     <FlatList
       accessibilityLabel={label}
@@ -78,7 +90,12 @@ export function DataList<T>({
       onEndReachedThreshold={0.4}
       initialNumToRender={20}
       windowSize={9}
-      renderItem={({ item }) => {
+      renderItem={({ item }) => renderRow(item)}
+    />
+  );
+
+  function renderRow(item: T) {
+    {
         const selected = selectedKey === keyOf(item);
         const content = wide ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: t.space(3) }}>
@@ -117,7 +134,6 @@ export function DataList<T>({
         ) : (
           <View style={style({ pressed: false })}>{content}</View>
         );
-      }}
-    />
-  );
+    }
+  }
 }

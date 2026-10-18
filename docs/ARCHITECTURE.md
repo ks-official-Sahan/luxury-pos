@@ -1,8 +1,24 @@
 # Architecture
 
-A universal, white-label POS: one codebase for iOS, Android, web, Windows, macOS and Linux, one multi-tenant API, and a staff MCP endpoint for AI assistants. Market research and the feature roadmap are in [RESEARCH.md](./RESEARCH.md).
+A universal, white-label POS: one codebase for iOS, Android, web, Windows, macOS and Linux, one multi-tenant API, and a staff MCP endpoint for AI assistants. Market research and the feature roadmap are in [RESEARCH.md](./RESEARCH.md); the design system in [../DESIGN.md](../DESIGN.md); operations in [OPERATIONS.md](./OPERATIONS.md); the kits we build on in [SAHAN-KITS.md](./SAHAN-KITS.md).
 
 ## Overview
+
+```
+                    Cloudflare edge (apps/edge, optional)          or   nginx (infra/nginx)
+   static web app · rate limits · edge cache for public reads          static app · proxy_cache · limit_req
+   origin failover · per-context routing (strangler fig)               primary + backup upstream
+                                   │
+                    ┌──────────────┴───────────────┐
+                    ▼                              ▼
+          apps/api (Node, Hono)           future: Django / split services
+          REST + /mcp + /api/openapi.json  serving the same OpenAPI contract
+                    │
+          Postgres (RLS)  ── outbox ──► worker ──► Kafka topics (CloudEvents)
+                                              └──► email, webhooks
+```
+
+Inside the API:
 
 ```
 apps/pos (Expo Router, React Native + RN Web)        apps/desktop (Electron)
@@ -37,6 +53,52 @@ packages/db         Drizzle schema, migrations, RLS policies, tenant-scoped tran
 | **Manager overrides are short-lived HMAC tokens** | A manager approves on the cashier's device with email + PIN. The token is bound to one action, store and cashier, and expires in 2 minutes. Every grant and every denial is audited. |
 | **Runtime brand theming** | A store's theme is data (`BrandTheme`), resolved at runtime into tokens. Colours are nudged to pass WCAG AA (text 7:1 target, controls 3:1). No per-brand rebuild. |
 | **MCP inside the API, stateless Streamable HTTP** | Tools call the same services the apps use, so the same permission checks apply. A personal access token's scopes cap the tools, and it can never exceed its owner's role. No sticky sessions, so it scales like the rest of the API. |
+
+## Events and streaming
+
+- **Domain events** (`pos.order.created.v1`, `pos.order.refunded.v1`, `pos.stock.adjusted.v1`, `pos.customer.upserted.v1`, `pos.branding.updated.v1`) are CloudEvents 1.0 envelopes validated by zod (`packages/contracts/src/events.ts`). Services call `emit(tx, …)` inside the business transaction, so an event exists if and only if the change committed (transactional outbox).
+- **Relay:** the outbox worker batches `event:*` rows and publishes them to Kafka when `KAFKA_BROKERS` is set (Confluent's librdkafka client, idempotent producer, `acks=all`). Topic per entity (`pos.order`, `pos.stock`, …) with an optional prefix; the partition key is the tenant id, so one tenant's events stay ordered. Delivery is at least once; consumers dedupe on the event `id` (a UUIDv7).
+- **Why outbox and not "write to Kafka in the request":** no dual-write, no lost events on a broker outage, sales keep working when Kafka is down, and the worker scales with `FOR UPDATE SKIP LOCKED`.
+- **Consumers this enables:** a warehouse loader, a search indexer, a loyalty or marketing service, webhooks, or a Django/Celery service, none of which need to import this codebase.
+
+## Backend-agnostic by contract (Django-ready)
+
+- **One contract:** `packages/contracts` (zod) generates the OpenAPI 3.1 document (`pnpm --filter @luxury-pos/contracts openapi` → `docs/openapi.json`, also served at `/api/openapi.json`). Each route carries its required permission (`x-permission`). Any backend that serves this contract, the same error shape (`{ error: { code, message, details } }`) and the same idempotency rule (client UUIDv7 ids) is a drop-in replacement.
+- **Routing without a big-bang rewrite:** the edge gateway's `ROUTE_RULES` sends one bounded context at a time (for example `/api/insights` for a Django service with its own agents and LLMs) to the fallback origin, and fails over between origins for reads and UUID-keyed writes. nginx offers the same with a `backup` upstream.
+- **Shared database rules a second backend must keep:** connect as the non-superuser role, call `set_config('app.tenant_id', …, true)` per transaction (RLS), write audit rows and outbox events in the same transaction.
+- **MCP:** the staff MCP server is stateless Streamable HTTP and only calls services, so a Python MCP server (or several, split by domain) can serve the same tools against the same contract.
+
+## Service boundaries (microservice-ready, not microservices yet)
+
+The API is a modular monolith: each folder in `apps/api/src/services` is a bounded context with no cross-imports of internals (they share only `@luxury-pos/db` tables, `lib/context` and `events/emit`).
+
+| Context | Owns | Publishes | Split-out trigger |
+| --- | --- | --- | --- |
+| Sales (`orders`, `drawer`, `overrides`) | orders, payments, refunds, drawers | `pos.order.*` | write throughput per tenant |
+| Catalogue and stock (`catalog`, `inventory`) | products, variants, stock ledger | `pos.stock.*` | warehouse/e-commerce sync load |
+| Clients and loyalty (`customers`) | customers, points | `pos.customer.*` | marketing integrations |
+| Reporting and AI (`reports`, `insights`) | rollups (read side) | none | AI cost or heavy analytics; first candidate for Django |
+| Administration (`admin`, `backoffice`) | tenants, stores, staff, roles, tokens, branding | `pos.branding.*` | rarely |
+
+Splitting one out means: move the folder behind its own process, give it the tables it owns, route its prefix at the edge, and let the others read its events instead of its tables.
+
+## Deployment
+
+| Piece | Runs on |
+| --- | --- |
+| API, worker | `docker/api.Dockerfile` (one image, worker by command), any container host; scale both horizontally |
+| Web app | `docker/web.Dockerfile` (nginx), Cloudflare Workers static assets (`apps/edge`), or the API's `WEB_DIST` |
+| Desktop | electron-builder installers per OS from `.github/workflows/desktop.yml` |
+| Mobile | EAS builds (`.github/workflows/mobile.yml`, `apps/pos/eas.json`) |
+| Database | Neon or any Postgres 15+; pooled URL for the API, owner URL for migrations and backups |
+| Events | Kafka, Redpanda (compose profile `events`) or Confluent Cloud |
+
+CI (`.github/workflows`): typecheck, unit tests, Postgres end-to-end with RLS, web build, edge tests and a Wrangler dry run, Docker builds on PRs; on `main`, multi-arch images to GHCR with SBOM and provenance, a Trivy scan, and the edge deploy; CodeQL weekly; Dependabot.
+
+## Data protection
+
+- Logical backups (`scripts/backup.sh`): `pg_dump -Fc`, verified with `pg_restore --list`, optional `age` encryption, SHA-256 sidecar, off-site copy to S3 or R2, local retention. Scheduled by the compose `backup` service or `.github/workflows/backup.yml`. `scripts/restore.sh` refuses to overwrite a database not named `*_restore` unless forced, so restore drills cannot clobber production.
+- Neon point-in-time restore covers the minutes-ago case; logical dumps cover provider loss and portability.
 
 ## Data model (main tables)
 
@@ -79,6 +141,8 @@ packages/db         Drizzle schema, migrations, RLS policies, tenant-scoped tran
 - **No N+1 queries:** every list endpoint is one or two queries. Per-line writes are batched inserts, and per-variant stock is a single multi-row upsert.
 - **Receipt numbers** come from a per-device row lock, so there is no global hot row.
 - **The outbox worker** scales with `SKIP LOCKED`.
+- **Ids:** UUIDv7 with a monotonic counter (RFC 9562 method 1), generated on the device; B-tree appends, sortable, and the idempotency key for offline replay.
+- **Back-office lists** use keyset pagination on `(created_at, id)` with matching indexes (`orders_tenant_created_id`), so deep pages cost the same as the first.
 - **Next steps at scale:** read replicas for reports, partition `stock_movements`, `pos_audit_events` and `orders` by month, and move the rollups to a queue consumer if write contention appears.
 
 ## Customisation model

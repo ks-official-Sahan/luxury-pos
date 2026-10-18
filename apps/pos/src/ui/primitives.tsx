@@ -140,8 +140,17 @@ function useInteractive(disabled?: boolean) {
   return { scale, onPressIn: () => to(0.98), onPressOut: () => to(1) };
 }
 
-export const focusRing = (t: ReturnType<typeof useTokens>, focused?: boolean): ViewStyle =>
-  (web ? { outlineStyle: focused ? "solid" : "none", outlineWidth: focused ? 2 : 0, outlineColor: t.color.focus, outlineOffset: 2 } : {}) as ViewStyle;
+/** Like CSS :focus-visible: rings for keyboard users, none after a mouse click or tap. */
+let keyboardMode = false;
+if (web && typeof window !== "undefined") {
+  window.addEventListener("keydown", (e) => e.key === "Tab" && (keyboardMode = true), true);
+  window.addEventListener("pointerdown", () => (keyboardMode = false), true);
+}
+
+export const focusRing = (t: ReturnType<typeof useTokens>, focused?: boolean): ViewStyle => {
+  const on = !!focused && keyboardMode;
+  return (web ? { outlineStyle: on ? "solid" : "none", outlineWidth: on ? 2 : 0, outlineColor: t.color.focus, outlineOffset: 2 } : {}) as ViewStyle;
+};
 
 export type ButtonKind = "primary" | "secondary" | "soft" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg" | "xl";

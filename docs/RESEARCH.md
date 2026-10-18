@@ -328,3 +328,48 @@ RLS implementation notes: policy on `current_setting('app.tenant_id')`; set it p
 - Jurisdiction-specific high-value cash/AML thresholds, gift card and unclaimed-property rules.
 - Tax-free providers: Planet API terms, country coverage (Shift4 doc page listed only DE/ES, likely outdated).
 - Cross-platform UI framework choice (Flutter vs React Native + Tauri vs native) via a prototype spike on offline SQLite + hardware SDKs.
+
+## 11. UI/UX research (October 2026) and how the redesign answers it
+
+Sources are secondary (review aggregators, vendor changelogs and help centres); treat ratings as indicative.
+
+### 11.1 What users of current systems complain about
+
+| Product | Praised for | Complained about |
+| --- | --- | --- |
+| Square POS / Retail | fast setup, simple first sale | slow item adding at checkout, outages, fund holds, hard-to-reach support ([Nasdaq](https://www.nasdaq.com/articles/square-review), [Capterra](https://www.capterra.com/p/275802/Square-Point-of-Sale/reviews/)) |
+| Shopify POS | keyboard navigation on iPad (⌘K search, ⌘↵ checkout, ⌘1-9) ([changelog](https://changelog.shopify.com/posts/keyboard-shortcuts-and-navigation-in-shopify-pos)) | 2026 tablet regression hid the cart item count; reader and printer disconnects; repeated sign-ins; weak real-time reporting ([App Store reviews](https://apps.shopify.com/shopify-pos/reviews)) |
+| Toast | restaurant depth | offline mode cannot close checks, reconcile or clock out until resync ([Toast help](https://support.toasttab.com/en/article/Offline-Mode-Using-Toast-During-a-Local-Network-Outage)); contracts and fees |
+| Lightspeed Retail | support | cache problems needing reinstall, reports that do not reconcile |
+| Clover, SumUp | simple pricing (SumUp) | fees, holds, bot support, hardware replacement |
+| Tulip + Salesfloor (merged March 2026) | 360° client view, client books, follow-ups for luxury associates ([Tulip](https://www.tulip.com/press/tulip-offers-turnkey-edition-clienteling-platform/)) | separate from the POS, so the associate switches apps at the moment of sale |
+
+### 11.2 Fifteen UX flaws and the fix built into this product
+
+| Flaw | Fix here |
+| --- | --- |
+| Slow item adding | Scanner-first search field (Enter adds an exact SKU, `/` focuses it), tiles or list per store, command palette adds items |
+| Count and total hidden | The sale panel with count, total and Charge is always on screen (tablet/desktop) or a sticky bar (phone) |
+| Modal on modal | Payment replaces the catalogue in place; secondary tasks open in one drawer; never stacked |
+| Tiny targets | 44/48/56 px by density, hit slop on small icon buttons |
+| Offline blocks the floor | Offline sales are final on the till, queued with UUIDv7 ids and replayed exactly once |
+| Silent sync failures | Live sync status in the shell; refused sales listed in Settings to resolve or discard |
+| One-tap refunds | Refund drawer: pick lines and quantities, restock choice, reason required, manager approval above the cashier's rights |
+| Hidden facts on refunds and fees | Order detail shows lines, tenders (refunds as negatives) and refund history together |
+| Exact-match search | Full-text search on name, SKU and barcode; clients by name, email or phone |
+| Hardware loops | Electron prints silently; receipts are HTML so any printer works; errors are banners, not blocking dialogs |
+| Repeated re-auth | Sessions persist per device; manager approvals use email + PIN on the cashier's device |
+| Keyboard-blind | ⌘/Ctrl+K palette, ⌘/Ctrl+1..8 navigation, ⌘/Ctrl+Enter to charge, digits type into the keypad, Esc goes back |
+| Unclear totals | Line discounts as negatives, tax label follows the store's tax mode, tabular figures everywhere |
+| Support dead ends | Every error says what happened and what to do next; machine-readable codes in the API |
+| Reports that do not reconcile | Dashboards, AI analyst and MCP tools read the same rollups, written in the sale's own transaction; every figure links to its orders |
+
+### 11.3 Trends adopted, and ones deliberately not
+
+Adopted: command palettes, keyboard-first flows, dense tables with tabular numerals, OKLCH-derived palettes, W3C design tokens (DTCG 2025.10, exported from the Brand studio), bento-style dashboards only where hierarchy is real (weighted 2:1 and 3:2 columns, one hero chart), live data badges and auto-refresh.
+
+Not adopted: glass effects on content (Apple's Liquid Glass guidance limits glass to the navigation layer; on a till it costs legibility), gradient hero metrics, decorative motion. Material 3 Expressive and Liquid Glass specifics should be re-checked against the official guidelines before a native-chrome pass.
+
+### 11.4 White-label theming practice
+
+Three tiers (brand primitives → semantic roles → components), contrast checked when tokens resolve (not at design time), lightness-only correction so the brand hue survives, every preset tested in light and dark, and brands override primitives only, never component tokens.
