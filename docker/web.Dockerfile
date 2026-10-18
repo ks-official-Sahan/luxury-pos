@@ -19,7 +19,7 @@ ARG EXPO_PUBLIC_API_URL=""
 ENV EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL}
 RUN pnpm --filter @luxury-pos/pos build:web
 
-FROM nginx:1.28-alpine AS final
+FROM nginx:1.29-alpine AS final
 # Only ${API_*} names reach envsubst, so nginx's own $vars and braces are untouched.
 ENV NGINX_ENVSUBST_FILTER="^API_"
 COPY infra/nginx/nginx.conf /etc/nginx/nginx.conf
