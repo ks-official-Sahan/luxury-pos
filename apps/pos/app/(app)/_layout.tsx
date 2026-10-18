@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { authClient } from "@/lib/auth";
 import { useCan, useMe, useStore } from "@/lib/queries";
 import { CommandPalette } from "@/shell/CommandPalette";
+import { LockScreen, useIdleLock } from "@/shell/LockScreen";
 import { isActive, NAV, type NavItem } from "@/shell/nav";
 import { StoreSwitcher } from "@/shell/StoreSwitcher";
 import { SyncStatus } from "@/shell/SyncStatus";
@@ -17,7 +18,7 @@ import { modKey, useShortcuts } from "@/shell/useShortcuts";
 import { useCart } from "@/state/cart";
 import { useSession } from "@/state/session";
 import { useTerm, useTokens } from "@/theme/BrandProvider";
-import { DotsThree, MagnifyingGlass, SidebarSimple, SignOut } from "@/ui/icons";
+import { DotsThree, Lock, MagnifyingGlass, SidebarSimple, SignOut } from "@/ui/icons";
 import { Avatar, focusRing, IconButton, Kbd, Text, useLayout } from "@/ui/primitives";
 import { Sheet } from "@/ui/Sheet";
 import { Toaster } from "@/ui/toast";
@@ -40,6 +41,7 @@ function useSignOut() {
   const router = useRouter();
   return async () => {
     await authClient.signOut().catch(() => {});
+    useUi.getState().set({ locked: false });
     useCart.getState().clear();
     useSession.getState().clear();
     qc.clear();
@@ -171,6 +173,9 @@ function Sidebar({ collapsed, canCollapse }: { collapsed: boolean; canCollapse: 
               </Text>
             </View>
           )}
+          <IconButton label={`Lock till (${modKey} L)`} size="sm" onPress={() => useUi.getState().set({ locked: true })}>
+            <Lock size={18} color={t.color.textMuted} />
+          </IconButton>
           <IconButton label="Sign out" size="sm" onPress={() => void signOut()}>
             <SignOut size={18} color={t.color.textMuted} />
           </IconButton>
@@ -227,6 +232,7 @@ function TabBar() {
             <NavLink key={String(i.href)} item={i} collapsed={false} active={isActive(i.href, pathname)} onPress={() => (setMore(false), router.navigate(i.href))} />
           ))}
         </View>
+        <NavLink item={{ href: "/", label: "Lock till", text: "Lock till", icon: Lock, permission: null }} collapsed={false} active={false} onPress={() => (setMore(false), useUi.getState().set({ locked: true }))} />
         <NavLink item={{ href: "/sign-in", label: "Sign out", text: "Sign out", icon: SignOut, permission: null }} collapsed={false} active={false} onPress={() => void signOut()} />
       </Sheet>
     </>
@@ -244,13 +250,15 @@ export default function AppLayout() {
   const groups = useNavItems();
   const collapsedPref = useUi((s) => s.sidebarCollapsed);
   const setUi = useUi((s) => s.set);
+  const signOut = useSignOut();
+  const touched = useIdleLock();
   useDevice();
 
   useEffect(() => {
     if (Platform.OS === "web") trackPageView(pathname);
   }, [pathname]);
 
-  const shortcuts: Record<string, () => void> = { "mod+k": () => setUi({ paletteOpen: !useUi.getState().paletteOpen }) };
+  const shortcuts: Record<string, () => void> = { "mod+k": () => setUi({ paletteOpen: !useUi.getState().paletteOpen }), "mod+l": () => setUi({ locked: true }) };
   for (const i of groups.flatMap((g) => g.items)) if (i.shortcut) shortcuts[`mod+${i.shortcut}`] = () => router.navigate(i.href);
   useShortcuts(shortcuts);
 
@@ -263,7 +271,7 @@ export default function AppLayout() {
   );
 
   return (
-    <View style={{ flex: 1, flexDirection: bp === "phone" ? "column" : "row", backgroundColor: t.color.background }}>
+    <View onTouchStart={touched} style={{ flex: 1, flexDirection: bp === "phone" ? "column" : "row", backgroundColor: t.color.background }}>
       {bp === "phone" ? (
         <>
           <View style={{ flex: 1, paddingTop: insets.top }}>{content}</View>
@@ -277,6 +285,7 @@ export default function AppLayout() {
       )}
       <CommandPalette />
       <Toaster />
+      <LockScreen onSignOut={() => void signOut()} />
     </View>
   );
 }

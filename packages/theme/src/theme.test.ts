@@ -61,7 +61,11 @@ describe("semantic roles", () => {
       const t = resolveTokens({ ...PRESETS[id as keyof typeof PRESETS], colorScheme: scheme });
       expect(contrastRatio(t.color.onPrimarySoft, t.color.primarySoft)).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(t.color.textMuted, t.color.surfaceSunken)).toBeGreaterThanOrEqual(4.5);
-      for (const k of ["success", "warning", "danger", "info"] as const) expect(contrastRatio(t.color[k], t.color.surface)).toBeGreaterThanOrEqual(4.5);
+      for (const k of ["success", "warning", "danger", "info"] as const) {
+        expect(contrastRatio(t.color[k], t.color.surface)).toBeGreaterThanOrEqual(4.5);
+        // Badges and notes put status text on its soft fill.
+        expect(contrastRatio(t.color[k], t.color[`${k}Soft`])).toBeGreaterThanOrEqual(4.5);
+      }
       expect(t.chart).toHaveLength(6);
       for (const c of t.chart) expect(contrastRatio(c, t.color.surface)).toBeGreaterThanOrEqual(3);
     }

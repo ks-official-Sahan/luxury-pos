@@ -1,11 +1,21 @@
+import { useState } from "react";
 import { FlatList, Pressable, View, type ViewStyle } from "react-native";
-import { formatMoney } from "@luxury-pos/core";
+import { formatMoney, uuidv7 } from "@luxury-pos/core";
 import { useStore } from "@/lib/queries";
 import { modKey } from "@/shell/useShortcuts";
-import { priceLines, useCart } from "@/state/cart";
+import { missingSerials, priceLines, useCart } from "@/state/cart";
+import { useHeld } from "@/state/held";
 import { useTerm, useTokens } from "@/theme/BrandProvider";
-import { Minus, Plus, ShoppingBag, Tag, Trash, UserCircle, X } from "@/ui/icons";
+import { CaretDown, Clock, Minus, Plus, ShoppingBag, Tag, Trash, UserCircle, X } from "@/ui/icons";
 import { Badge, Button, EmptyState, focusRing, IconButton, Kbd, Money, Row, Stat, Text, useLayout } from "@/ui/primitives";
+import { Sheet } from "@/ui/Sheet";
+import { toast } from "@/ui/toast";
+import { LineEditor } from "./LineEditor";
+
+const ago = (at: number) => {
+  const m = Math.round((Date.now() - at) / 60_000);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
+};
 
 /**
  * The running sale. Count, total and the pay action never leave the screen
@@ -17,8 +27,39 @@ export function Ticket({ onPay, onClient, onDiscount, tendering, onClose }: { on
   const term = useTerm();
   const store = useStore();
   const { bp } = useLayout();
-  const { lines, orderDiscount, client, setQuantity, remove, clear, setClient } = useCart();
+  const { lines, orderDiscount, client, setQuantity, remove, clear, setClient, focusKey, focus, restore } = useCart();
+  const held = useHeld();
+  const [recall, setRecall] = useState(false);
   if (!store) return null;
+  const heldHere = held.items.filter((h) => h.storeId === store.id);
+  const unserialed = missingSerials(lines);
+  const snapshot = () => ({ lines, orderDiscount, client });
+
+  // Destructive but reversible: act at once and offer Undo, instead of an "are you sure?" dialog.
+  const clearSale = () => {
+    const before = snapshot();
+    clear();
+    toast.undo("Sale cleared", () => restore(before));
+  };
+  const holdSale = () => {
+    held.hold({ id: uuidv7(), at: Date.now(), storeId: store.id, ...snapshot() });
+    clear();
+    toast.success(client ? `Held for ${client.name}` : "Sale held");
+  };
+  const pickUp = (id: string) => {
+    if (lines.length) held.hold({ id: uuidv7(), at: Date.now(), storeId: store.id, ...snapshot() });
+    const sale = held.take(id);
+    if (sale) restore(sale);
+    setRecall(false);
+  };
+  const pay = () => {
+    const first = unserialed[0];
+    if (first) {
+      focus(first.key);
+      return toast.error(`Choose the serial number for ${first.item.name}`);
+    }
+    onPay();
+  };
   const priced = priceLines(lines, orderDiscount, store.currency, store.taxMode);
   const byKey = new Map(priced.lines.map((l) => [l.id, l]));
   const count = lines.reduce((s, l) => s + l.quantity, 0);
@@ -38,8 +79,12 @@ export function Ticket({ onPay, onClient, onDiscount, tendering, onClose }: { on
           </Text>
           {count ? <Badge label={`${count} item${count > 1 ? "s" : ""}`} /> : null}
         </Row>
-        {lines.length && !tendering ? (
-          <Button kind="ghost" size="sm" label="Clear" onPress={clear} accessibilityHint="Removes every item from the sale" />
+        {!tendering ? (
+          <Row gap={1}>
+            {heldHere.length ? <Button kind="ghost" size="sm" label={`Held ${heldHere.length}`} icon={<Clock size={16} color={t.color.text} />} onPress={() => setRecall(true)} accessibilityHint="Sales put aside on this till" /> : null}
+            {lines.length ? <Button kind="ghost" size="sm" label="Hold" onPress={holdSale} accessibilityHint="Puts this sale aside so you can start another" /> : null}
+            {lines.length ? <Button kind="ghost" size="sm" label="Clear" onPress={clearSale} accessibilityHint="Removes every item; you can undo" /> : null}
+          </Row>
         ) : null}
       </Row>
 
@@ -92,24 +137,40 @@ export function Ticket({ onPay, onClient, onDiscount, tendering, onClose }: { on
           const p = byKey.get(l.key);
           const discount = p ? p.lineDiscount + p.orderDiscount : 0;
           const meta = [...Object.values(l.item.options), l.serialNumber ? `S/N ${l.serialNumber}` : null].filter(Boolean).join(" · ");
+          const open = focusKey === l.key && !tendering;
+          const needsSerial = l.item.serialized && !l.serialNumber;
           return (
             <View style={{ paddingVertical: t.space(3), borderBottomWidth: 1, borderBottomColor: t.color.border, gap: t.space(1) }}>
-              <Row justify="space-between" align="flex-start">
-                <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-                  <Text variant="label" numberOfLines={2} style={{ fontWeight: "600" }}>
-                    {l.item.name}
-                  </Text>
-                  {meta ? (
-                    <Text variant="caption" tone="muted" numberOfLines={1}>
-                      {meta}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${l.item.name}${meta ? `, ${meta}` : ""}, ${formatMoney(p?.total ?? 0, store.currency)}`}
+                accessibilityHint={open ? "Closes the line options" : "Serial number, discount and price for this line"}
+                accessibilityState={{ expanded: open }}
+                disabled={tendering}
+                onPress={() => focus(open ? null : l.key)}
+                style={({ focused }: { focused?: boolean; pressed: boolean }) => ({ borderRadius: t.radius.sm, ...focusRing(t, focused) }) as ViewStyle}
+              >
+                <Row justify="space-between" align="flex-start">
+                  <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+                    <Text variant="label" numberOfLines={2} style={{ fontWeight: "600" }}>
+                      {l.item.name}
                     </Text>
-                  ) : null}
-                </View>
-                <View style={{ alignItems: "flex-end" }}>
-                  <Money amount={p?.total ?? 0} currency={store.currency} variant="label" style={{ fontWeight: "600" }} />
-                  {discount > 0 ? <Money amount={-discount} currency={store.currency} variant="caption" tone="success" /> : null}
-                </View>
-              </Row>
+                    {meta ? (
+                      <Text variant="caption" tone="muted" numberOfLines={1}>
+                        {meta}
+                      </Text>
+                    ) : null}
+                    {needsSerial ? <Badge tone="warning" label="Serial number needed" /> : null}
+                  </View>
+                  <Row gap={2} align="flex-start">
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Money amount={p?.total ?? 0} currency={store.currency} variant="label" style={{ fontWeight: "600" }} />
+                      {discount > 0 ? <Money amount={-discount} currency={store.currency} variant="caption" tone="success" /> : null}
+                    </View>
+                    {!tendering ? <CaretDown size={14} color={t.color.textMuted} style={{ marginTop: 3, transform: [{ rotate: open ? "180deg" : "0deg" }] }} /> : null}
+                  </Row>
+                </Row>
+              </Pressable>
               {tendering ? (
                 <Text variant="caption" tone="muted">
                   {l.quantity} × {formatMoney(l.priceOverride ?? l.item.price, store.currency)}
@@ -128,11 +189,21 @@ export function Ticket({ onPay, onClient, onDiscount, tendering, onClose }: { on
                   <Text variant="caption" tone="muted" style={{ flex: 1, marginLeft: t.space(2) }}>
                     {formatMoney(l.priceOverride ?? l.item.price, store.currency)} each
                   </Text>
-                  <IconButton label={`Remove ${l.item.name}`} size="sm" tone="danger" onPress={() => remove(l.key)}>
+                  <IconButton
+                    label={`Remove ${l.item.name}`}
+                    size="sm"
+                    tone="danger"
+                    onPress={() => {
+                      const before = snapshot();
+                      remove(l.key);
+                      toast.undo(`${l.item.name} removed`, () => restore(before));
+                    }}
+                  >
                     <Trash size={16} color={t.color.danger} />
                   </IconButton>
                 </Row>
               )}
+              {open ? <LineEditor line={l} onDone={() => focus(null)} /> : null}
             </View>
           );
         }}
@@ -172,7 +243,7 @@ export function Ticket({ onPay, onClient, onDiscount, tendering, onClose }: { on
                   {bp === "desktop" ? <Kbd>{`${modKey}↵`}</Kbd> : null}
                 </Row>
               }
-              onPress={onPay}
+              onPress={pay}
               disabled={!lines.length}
               style={{ flex: 1 }}
               accessibilityHint="Choose how the customer pays"
@@ -180,6 +251,43 @@ export function Ticket({ onPay, onClient, onDiscount, tendering, onClose }: { on
           </Row>
         )}
       </View>
+      <Sheet visible={recall} onClose={() => setRecall(false)} title="Held sales" width={460}>
+        {heldHere.map((h) => {
+          const total = priceLines(h.lines, h.orderDiscount, store.currency, store.taxMode).total;
+          const items = h.lines.reduce((n, l) => n + l.quantity, 0);
+          return (
+            <Pressable
+              key={h.id}
+              accessibilityRole="button"
+              accessibilityLabel={`${h.client?.name ?? "Walk-in"}, ${items} items, ${formatMoney(total, store.currency)}, held ${ago(h.at)}. Pick up`}
+              onPress={() => pickUp(h.id)}
+              style={({ hovered, focused }: { hovered?: boolean; pressed: boolean; focused?: boolean }) =>
+                ({ flexDirection: "row", alignItems: "center", gap: t.space(3), padding: t.space(3), borderRadius: t.radius.md, borderWidth: 1, borderColor: t.color.border, backgroundColor: hovered ? t.color.hover : t.color.surface, ...focusRing(t, focused) }) as ViewStyle
+              }
+            >
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text variant="label" style={{ fontWeight: "600" }}>
+                  {h.client?.name ?? "Walk-in"}
+                </Text>
+                <Text variant="caption" tone="muted" numberOfLines={1}>
+                  {items} item{items > 1 ? "s" : ""} · {h.lines.map((l) => l.item.name).join(", ")}
+                </Text>
+              </View>
+              <View style={{ alignItems: "flex-end", gap: 2 }}>
+                <Money amount={total} currency={store.currency} variant="label" style={{ fontWeight: "600" }} />
+                <Text variant="caption" tone="muted">
+                  {ago(h.at)}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
+        {lines.length ? (
+          <Text variant="caption" tone="muted">
+            Picking one up puts the current sale on hold first, so nothing is lost.
+          </Text>
+        ) : null}
+      </Sheet>
     </View>
   );
 }

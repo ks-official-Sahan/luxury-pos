@@ -1,20 +1,21 @@
 import { useEffect, useRef } from "react";
-import { Animated, Easing, Platform, View } from "react-native";
+import { Animated, Easing, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 import { useTokens } from "../theme/BrandProvider";
 import { CheckCircle, Info, WarningCircle } from "./icons";
 import { Text } from "./primitives";
 
-type Toast = { id: number; tone: "success" | "info" | "danger"; message: string };
+type Toast = { id: number; tone: "success" | "info" | "danger"; message: string; action?: { label: string; run: () => void } };
 
 /** Non-blocking confirmations ("Sale saved", "Token copied"). Never used for errors that need a decision. */
-export const useToasts = create<{ items: Toast[]; push: (tone: Toast["tone"], message: string) => void; dismiss: (id: number) => void }>()((set, get) => ({
+export const useToasts = create<{ items: Toast[]; push: (tone: Toast["tone"], message: string, action?: Toast["action"]) => void; dismiss: (id: number) => void }>()((set, get) => ({
   items: [],
-  push: (tone, message) => {
+  push: (tone, message, action) => {
     const id = Date.now() + Math.random();
-    set({ items: [...get().items.slice(-2), { id, tone, message }] });
-    setTimeout(() => get().dismiss(id), 3600);
+    set({ items: [...get().items.slice(-2), { id, tone, message, action }] });
+    // Toasts with an action stay longer: people need time to reach for Undo.
+    setTimeout(() => get().dismiss(id), action ? 6000 : 3600);
   },
   dismiss: (id) => set({ items: get().items.filter((t) => t.id !== id) }),
 }));
@@ -23,6 +24,8 @@ export const toast = {
   success: (m: string) => useToasts.getState().push("success", m),
   info: (m: string) => useToasts.getState().push("info", m),
   error: (m: string) => useToasts.getState().push("danger", m),
+  /** A reversible action happened: say so and offer to take it back instead of asking "are you sure?" first. */
+  undo: (m: string, run: () => void) => useToasts.getState().push("info", m, { label: "Undo", run }),
 };
 
 function Item({ item }: { item: Toast }) {
@@ -54,6 +57,21 @@ function Item({ item }: { item: Toast }) {
     >
       <Icon size={20} color={color} weight="fill" />
       <Text variant="label">{item.message}</Text>
+      {item.action ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            item.action!.run();
+            useToasts.getState().dismiss(item.id);
+          }}
+          hitSlop={8}
+          style={{ marginLeft: t.space(2), paddingHorizontal: t.space(2), minHeight: 32, justifyContent: "center", borderRadius: t.radius.sm }}
+        >
+          <Text variant="label" tone="primary" style={{ fontWeight: "600" }}>
+            {item.action.label}
+          </Text>
+        </Pressable>
+      ) : null}
     </Animated.View>
   );
 }

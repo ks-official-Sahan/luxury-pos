@@ -154,13 +154,13 @@ export function CatalogGrid({ width }: { width: number }) {
           value={query}
           onChangeText={setQuery}
           onSubmitEditing={onSubmit}
-          placeholder="Search name, SKU or scan"
+          placeholder={bp === "phone" ? "Search or scan" : "Search name, SKU or scan"}
           autoCorrect={false}
           autoCapitalize="none"
           returnKeyType="search"
           blurOnSubmit={false}
           leading={isFetching ? <Barcode size={20} color={t.color.primary} /> : <MagnifyingGlass size={20} color={t.color.textMuted} />}
-          trailing={<Kbd>/</Kbd>}
+          trailing={bp === "desktop" ? <Kbd>/</Kbd> : undefined}
           style={{ flex: 1 }}
         />
         <Segmented

@@ -1,13 +1,23 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { ArrowRight } from "@/ui/icons";
-import { useState } from "react";
+import { ArrowRight, Eye, EyeSlash } from "@/ui/icons";
+import { useEffect, useState } from "react";
 import { Image, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
 import { authClient } from "@/lib/auth";
 import { useSession } from "@/state/session";
 import { useBrand } from "@/theme/BrandProvider";
-import { Button, ErrorNote, Field, Stack, Text, useLayout } from "@/ui/primitives";
+import { Button, ErrorNote, Field, IconButton, Stack, Text, useLayout } from "@/ui/primitives";
+
+/** A till is a shared, always-on screen: the brand panel shows the time like a counter clock. */
+function useClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
 
 type Tenant = { id: string; name: string; slug: string; role: string };
 
@@ -30,6 +40,11 @@ export default function SignIn() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tenants, setTenants] = useState<Tenant[] | null>(null);
+  const [reveal, setReveal] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const now = useClock();
+  const emailError = touched && !/^\S+@\S+\.\S+$/.test(email.trim()) ? "Enter the email you were invited with." : null;
+  const passwordError = touched && !password ? "Enter your password." : null;
 
   const choose = (tenant: Tenant) => {
     setSession({ tenantId: tenant.id, storeId: null, brandSlug: tenant.slug });
@@ -38,6 +53,8 @@ export default function SignIn() {
   };
 
   const submit = async () => {
+    setTouched(true);
+    if (!/^\S+@\S+\.\S+$/.test(email.trim()) || !password) return;
     setBusy(true);
     setError(null);
     try {
@@ -84,10 +101,25 @@ export default function SignIn() {
               Use the email your manager invited.
             </Text>
           </Stack>
-          <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="username" />
-          <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" textContentType="password" onSubmitEditing={submit} />
+          <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="username" autoFocus={Platform.OS === "web"} error={emailError} returnKeyType="next" />
+          <Field
+            label="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!reveal}
+            autoComplete="current-password"
+            textContentType="password"
+            onSubmitEditing={submit}
+            error={passwordError}
+            trailing={
+              <IconButton label={reveal ? "Hide password" : "Show password"} size="sm" onPress={() => setReveal((v) => !v)}>
+                {reveal ? <EyeSlash size={18} color={t.color.textMuted} /> : <Eye size={18} color={t.color.textMuted} />}
+              </IconButton>
+            }
+          />
           {error ? <ErrorNote message={error} /> : null}
-          <Button label="Sign in" onPress={submit} loading={busy} disabled={!email || !password} size="lg" block trailing={<ArrowRight size={18} color={t.color.onPrimary} />} />
+          {/* Never disabled: an empty field explains itself on press instead of a grey, silent button. */}
+          <Button label="Sign in" onPress={submit} loading={busy} size="lg" block trailing={<ArrowRight size={18} color={t.color.onPrimary} />} />
         </Stack>
       )}
       <Text variant="caption" tone="muted">
@@ -101,13 +133,26 @@ export default function SignIn() {
       <ScrollView contentContainerStyle={{ flexGrow: 1, flexDirection: wide ? "row" : "column" }} keyboardShouldPersistTaps="handled">
         {/* The store's own colour carries the brand panel; the form stays on a calm surface. */}
         <View style={{ flex: wide ? 1 : undefined, backgroundColor: t.color.primary, padding: gutter * (wide ? 2 : 1), paddingTop: wide ? gutter * 2 : gutter * 3, justifyContent: "space-between", gap: t.space(8), minHeight: wide ? undefined : 220 }}>
-          {logo ? <Image source={{ uri: logo }} style={{ width: 48, height: 48, borderRadius: t.radius.sm }} accessibilityLabel={`${brandName} logo`} /> : <View />}
+          {logo ? (
+            <Image source={{ uri: logo }} style={{ width: 48, height: 48, borderRadius: t.radius.sm }} accessibilityLabel={`${brandName} logo`} />
+          ) : !brand.data ? (
+            <View />
+          ) : (
+            <View accessibilityElementsHidden style={{ width: 48, height: 48, borderRadius: t.radius.md, borderWidth: 1.5, borderColor: t.color.onPrimary, alignItems: "center", justifyContent: "center", opacity: 0.9 }}>
+              <Text variant="title" tone="onPrimary">
+                {brandName.charAt(0)}
+              </Text>
+            </View>
+          )}
           <Stack gap={2}>
+            <Text variant="label" tone="onPrimary" style={{ opacity: 0.8, fontVariant: ["tabular-nums"] }}>
+              {now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })} · {now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+            </Text>
             <Text variant="display" tone="onPrimary" accessibilityRole="header">
               {brandName}
             </Text>
             <Text tone="onPrimary" style={{ opacity: 0.85, maxWidth: 420 }}>
-              Sell, look after your clients and run every store from one place.
+              {brand.data ? "Sign in to open the till." : "Sell, look after your clients and run every store from one place."}
             </Text>
           </Stack>
         </View>

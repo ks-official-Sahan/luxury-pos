@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { reorderSuggestion, signedQuantity, uuidv7, weightedAverageCost, type Permission } from "@luxury-pos/core";
 import type { stockAdjustSchema, transferSchema } from "@luxury-pos/contracts";
-import { dailyVariantSales, posAuditEvents, products, stockLevels, stockMovements, variants, withTenant } from "@luxury-pos/db";
+import { dailyVariantSales, posAuditEvents, products, serialItems, stockLevels, stockMovements, variants, withTenant } from "@luxury-pos/db";
 import type { Infra } from "../infra";
 import { assertCan, type Actor } from "../lib/context";
 import { AppError, conflict } from "../lib/errors";
@@ -107,4 +107,17 @@ export async function lowStock(infra: Infra, actor: Actor, storeId: string, opts
       .limit(opts.limit ?? 50);
     return rows.map((r) => ({ ...r, ...reorderSuggestion({ available: r.available, dailyVelocity: r.sold28 / 28, leadTimeDays: opts.leadTimeDays ?? 14, safetyDays: opts.safetyDays ?? 7 }) }));
   });
+}
+
+/** Serial numbers on hand at a store for one variant, so the till can offer them instead of free typing. */
+export async function availableSerials(infra: Infra, actor: Actor, storeId: string, variantId: string) {
+  assertCan(actor, "sale.create", storeId);
+  return withTenant(infra.db, actor.tenantId, (tx) =>
+    tx
+      .select({ serial: serialItems.serial, certificateUrl: serialItems.certificateUrl })
+      .from(serialItems)
+      .where(and(eq(serialItems.storeId, storeId), eq(serialItems.variantId, variantId), eq(serialItems.status, "in_stock")))
+      .orderBy(asc(serialItems.serial))
+      .limit(100),
+  );
 }

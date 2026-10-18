@@ -138,6 +138,7 @@ export function createApp(infra: Infra, auth: Auth) {
   // inventory
   api.post("/stock/movements", async (c) => c.json(await inventory.adjustStock(infra, actor(c), await body(c, stockAdjustSchema))));
   api.post("/stock/transfers", async (c) => c.json(await inventory.transferStock(infra, actor(c), await body(c, transferSchema)), 201));
+  api.get("/stores/:storeId/serials", async (c) => c.json(await inventory.availableSerials(infra, actor(c), c.req.param("storeId"), z.uuid().parse(c.req.query("variantId")))));
   api.get("/stores/:storeId/low-stock", async (c) => c.json(await inventory.lowStock(infra, actor(c), c.req.param("storeId"))));
 
   // clients
@@ -177,6 +178,7 @@ export function createApp(infra: Infra, auth: Auth) {
   api.patch("/staff/:id", async (c) =>
     c.json(await admin.updateStaff(infra, actor(c), c.req.param("id"), await body(c, z.object({ role: z.enum(ROLES).optional(), storeIds: z.array(z.uuid()).nullable().optional(), active: z.boolean().optional() })))),
   );
+  api.post("/me/pin/verify", async (c) => c.json(await admin.verifyPin(infra, actor(c), (await body(c, z.object({ pin: z.string().max(8) }))).pin)));
   api.put("/me/pin", async (c) => c.json(await admin.setPin(infra, actor(c), (await body(c, z.object({ pin: z.string() }))).pin)));
   api.post("/tokens", async (c) => c.json(await admin.createApiToken(infra, actor(c), await body(c, apiTokenSchema)), 201));
   api.delete("/tokens/:id", async (c) => c.json(await admin.revokeApiToken(infra, actor(c), c.req.param("id"))));

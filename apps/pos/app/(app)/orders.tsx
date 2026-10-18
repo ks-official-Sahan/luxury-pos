@@ -5,6 +5,7 @@ import { ScrollView, View } from "react-native";
 import { formatMoney } from "@luxury-pos/core";
 import { RefundSheet, type OrderDetail, type OrderStatus } from "@/features/orders/RefundSheet";
 import { api } from "@/lib/api";
+import { useFormat } from "@/lib/format";
 import { useCan, useMe, useStore } from "@/lib/queries";
 import { printReceipt, receiptHtml, type ReceiptData } from "@/lib/receipt";
 import { useBrand, useTerm, useTokens } from "@/theme/BrandProvider";
@@ -54,10 +55,11 @@ const METHOD_LABEL: Record<string, string> = {
   other: "Other",
 };
 
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 const methodLabel = (m: string) => METHOD_LABEL[m] ?? m.replace(/_/g, " ");
 
-function StatusBadge({ status }: { status: OrderStatus }) {
+/** Completed is the normal state: lists stay quiet and only flag what differs. */
+function StatusBadge({ status, quiet }: { status: OrderStatus; quiet?: boolean }) {
+  if (quiet && status === "completed") return null;
   return <Badge tone={STATUS[status].tone} label={STATUS[status].label} />;
 }
 
@@ -100,6 +102,7 @@ function OrdersView() {
   const can = useCan();
   const { wide } = useLayout();
   const store = useStore();
+  const f = useFormat();
   const storeId = store?.id;
   const canRefund = can("sale.refund") || can("sale.create");
 
@@ -130,6 +133,10 @@ function OrdersView() {
     placeholderData: keepPreviousData,
   });
   const rows = useMemo(() => orders.data?.pages.flatMap((p) => p.items), [orders.data]);
+  // Wide screens show the newest sale instead of an empty "pick one" pane.
+  useEffect(() => {
+    if (wide && !selectedId && rows?.[0]) setSelectedId(rows[0].id);
+  }, [wide, selectedId, rows]);
 
   const detail: UseQueryResult<OrderDetail> = useQuery({
     queryKey: ["orders", "detail", selectedId],
@@ -149,7 +156,7 @@ function OrdersView() {
               {r.receiptNo ?? "Pending sync"}
             </Text>
             <Text variant="caption" tone="muted">
-              {`${when(r.createdAt)}${wide ? "" : ` · ${r.items} ${r.items === 1 ? "item" : "items"}`}`}
+              {`${f.dateTime(r.createdAt)}${wide ? "" : ` · ${r.items} ${r.items === 1 ? "item" : "items"}`}`}
             </Text>
           </Stack>
         ),
@@ -207,10 +214,10 @@ function OrdersView() {
         header: "Status",
         flex: 1.4,
         phone: true,
-        render: (r) => <StatusBadge status={r.status} />,
+        render: (r) => <StatusBadge status={r.status} quiet />,
       },
     ],
-    [term, wide],
+    [term, wide, f],
   );
 
   const toolbar = (
@@ -327,6 +334,7 @@ const toReceipt = (o: OrderDetail): ReceiptData => ({
 
 /** Content only: the caller supplies the scroll container (pane on wide, Sheet on phone). */
 function SaleDetail({ detail, canRefund, onRefund }: { detail: UseQueryResult<OrderDetail>; canRefund: boolean; onRefund: () => void }) {
+  const f = useFormat();
   const t = useTokens();
   const term = useTerm();
   const { theme } = useBrand();
@@ -370,7 +378,7 @@ function SaleDetail({ detail, canRefund, onRefund }: { detail: UseQueryResult<Or
           <StatusBadge status={o.status} />
         </Row>
         <Text variant="label" tone="muted">
-          {when(o.createdAt)}
+          {f.dateTime(o.createdAt)}
         </Text>
       </Stack>
 
@@ -434,7 +442,7 @@ function SaleDetail({ detail, canRefund, onRefund }: { detail: UseQueryResult<Or
               <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
                 <Text variant="label">{r.reason ?? "No reason given"}</Text>
                 <Text variant="caption" tone="muted">
-                  {when(r.createdAt)}
+                  {f.dateTime(r.createdAt)}
                 </Text>
               </Stack>
               <Text variant="label" tone="danger" style={{ fontVariant: ["tabular-nums"] }}>

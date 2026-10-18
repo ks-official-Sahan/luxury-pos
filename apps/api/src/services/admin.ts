@@ -132,6 +132,19 @@ export async function setPin(infra: Infra, actor: Actor, pin: string) {
   return { ok: true };
 }
 
+/**
+ * Unlocks this person's till after an idle lock. The session never ended, so this
+ * only proves the right person is back; attempts share the PIN rate limit.
+ */
+export async function verifyPin(infra: Infra, actor: Actor, pin: string) {
+  const limited = await infra.limit("pin:user", `${actor.tenantId}:${actor.userId}`);
+  if (!limited.ok) throw new AppError(429, "rate_limited", "too many PIN attempts; sign in again with your password");
+  const [m] = await withTenant(infra.db, actor.tenantId, (tx) => tx.select({ pinHash: memberships.pinHash }).from(memberships).where(eq(memberships.id, actor.membershipId)));
+  if (!m?.pinHash) throw new AppError(409, "no_pin", "set a till PIN in Settings first");
+  if (!(await bcrypt.compare(pin, m.pinHash))) throw new AppError(403, "wrong_pin", "that PIN is not right");
+  return { ok: true };
+}
+
 /** Personal access token for the MCP server. Scopes are capped at what the creator can do; the secret is shown once. */
 export async function createApiToken(infra: Infra, actor: Actor, input: { name: string; scopes: (typeof PERMISSIONS)[number][]; expiresInDays: number }) {
   assertCan(actor, "mcp.access");

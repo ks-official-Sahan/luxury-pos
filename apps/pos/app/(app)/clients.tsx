@@ -48,6 +48,10 @@ export default function Clients() {
 
   const search = useClientSearch(needle);
   const profile = useClientProfile(selected);
+  // Wide screens open the first client rather than leaving half the screen empty.
+  useEffect(() => {
+    if (wide && !selected && search.data?.[0]) setSelected(search.data[0].id);
+  }, [wide, selected, search.data]);
 
   const startSale = (c: ClientRecord) => {
     useCart.getState().setClient({ id: c.id, name: clientName(c), tierId: c.tierId, pointsBalance: c.pointsBalance });

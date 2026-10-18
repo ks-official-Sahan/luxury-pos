@@ -18,6 +18,9 @@ Read before adding a screen. The goal: every screen looks like it came from the 
 | Feedback | `toast.success()` after a write; `ErrorNote` inline for failures; `Skeleton` while loading; `EmptyState` that says what fills the place | `src/ui/toast.tsx`, primitives |
 | Charts | `AreaChart`, `Sparkline`, `Meter`, `ShareBar`, `Delta` | `src/ui/charts.tsx` |
 | Icons | Phosphor via deep imports only, re-exported from `src/ui/icons.ts` | |
+| Dates | `useFormat()`: `date`, `dateTime` ("Today 14:05"), `range` ("12 – 18 Oct 2026"), `tick` for chart axes. Device language, store time zone. Never call `toLocale*String` in a screen. | `src/lib/format.ts` |
+
+**See every primitive live at `/design`** (no sign-in): all variants and states under each preset, light and dark, with contrast ratios per colour role. Build new components against it and check a brand there before saving it.
 
 ## Rules
 
@@ -29,3 +32,7 @@ Read before adding a screen. The goal: every screen looks like it came from the 
 - **Accessibility.** `accessibilityRole` and `accessibilityLabel` on every pressable, `accessibilityRole="header"` on headings, targets at least `t.hit` (or `size="sm"` with hit slop), focus rings come from `focusRing()`.
 - **Copy.** Plain and specific. No em dashes. Errors say what happened and what to do next.
 - **Motion.** Only through primitives and `Sheet` (they respect reduced motion). No custom animations in screens.
+- **Undo over confirm.** If an action can be reversed locally (clear a sale, remove a line), do it and call `toast.undo(message, restore)`. Keep confirmation dialogs for what cannot be undone (refunds, revoking a token).
+- **Never a silent disabled button.** Prefer an enabled primary that explains what is missing on press (inline field errors) over a greyed-out one. Disable only while a request is in flight or when the reason is visible next to it.
+- **Master-detail on wide screens opens the first record** instead of an empty "pick one" pane. Lists stay quiet: show a status badge only when it differs from the normal state.
+- **Lead with what to act on.** Dashboards put actionable counts (running low, to review, waiting to sync) first as links, then the figures.

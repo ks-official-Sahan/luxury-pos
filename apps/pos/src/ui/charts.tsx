@@ -40,7 +40,7 @@ export function Sparkline({ values, width = 96, height = 28, color, label }: { v
  * Area chart for a daily series with an optional comparison series (previous
  * period) drawn as a quiet dashed line. Tap/hover a column to read its value.
  */
-export function AreaChart({ series, compare, height = 180, format, label }: { series: Point[]; compare?: number[]; height?: number; format: (v: number) => string; label: string }) {
+export function AreaChart({ series, compare, height = 180, format, label, formatX = (x) => x, tickX }: { series: Point[]; compare?: number[]; height?: number; format: (v: number) => string; label: string; formatX?: (x: string) => string; tickX?: (x: string) => string }) {
   const t = useTokens();
   const [width, setWidth] = useState(0);
   const [active, setActive] = useState<number | null>(null);
@@ -58,7 +58,7 @@ export function AreaChart({ series, compare, height = 180, format, label }: { se
     <View>
       <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6, minHeight: 20 }}>
         <Text variant="caption" tone="muted">
-          {series[at]?.x ?? ""}
+          {series[at] ? formatX(series[at]!.x) : ""}
         </Text>
         <Text variant="caption" style={{ fontVariant: ["tabular-nums"] }}>
           {series[at] ? format(series[at]!.y) : ""}
@@ -93,7 +93,7 @@ export function AreaChart({ series, compare, height = 180, format, label }: { se
           {series.map((p, i) => (
             <Pressable
               key={p.x}
-              accessibilityLabel={`${p.x}: ${format(p.y)}`}
+              accessibilityLabel={`${formatX(p.x)}: ${format(p.y)}`}
               onPress={() => setActive(i)}
               {...(Platform.OS === "web" ? { onHoverIn: () => setActive(i), onHoverOut: () => setActive(null) } : {})}
               style={{ flex: 1 }}
@@ -101,6 +101,15 @@ export function AreaChart({ series, compare, height = 180, format, label }: { se
           ))}
         </View>
       </View>
+      {tickX && series.length > 1 ? (
+        <View accessibilityElementsHidden style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 6 }}>
+          {[0, Math.floor((series.length - 1) / 2), series.length - 1].filter((v, i, a) => a.indexOf(v) === i).map((i) => (
+            <Text key={i} variant="caption" tone="muted" style={{ fontVariant: ["tabular-nums"] }}>
+              {tickX(series[i]!.x)}
+            </Text>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }

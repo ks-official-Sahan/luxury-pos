@@ -504,7 +504,7 @@ export const Field = forwardRef<React.ComponentRef<typeof TextInput>, FieldProps
   const [focused, setFocused] = useState(false);
   const id = useMemo(() => `f${Math.random().toString(36).slice(2, 8)}`, []);
   return (
-    <View style={[{ gap: 6 }, style as StyleProp<ViewStyle>]}>
+    <View style={[{ gap: 6, minWidth: 0 }, style as StyleProp<ViewStyle>]}>
       {!hideLabel ? (
         <Text variant="label" tone="muted" nativeID={id}>
           {label}
@@ -516,6 +516,7 @@ export const Field = forwardRef<React.ComponentRef<typeof TextInput>, FieldProps
             flexDirection: "row",
             alignItems: "center",
             gap: t.space(2),
+            minWidth: 0,
             minHeight: size === "lg" ? t.hit + 8 : t.hit,
             borderRadius: t.radius.md,
             borderWidth: 1,
@@ -535,7 +536,7 @@ export const Field = forwardRef<React.ComponentRef<typeof TextInput>, FieldProps
           placeholderTextColor={t.color.textMuted}
           onFocus={(e) => (setFocused(true), props.onFocus?.(e))}
           onBlur={(e) => (setFocused(false), props.onBlur?.(e))}
-          style={{ flex: 1, alignSelf: "stretch", color: t.color.text, fontSize: size === "lg" ? t.size.lg : t.size.base, fontFamily: web ? t.font.body : undefined, ...(web ? ({ outlineStyle: "none" } as object) : {}) }}
+          style={{ flex: 1, minWidth: 0, width: "100%", alignSelf: "stretch", color: t.color.text, fontSize: size === "lg" ? t.size.lg : t.size.base, fontFamily: web ? t.font.body : undefined, ...(web ? ({ outlineStyle: "none" } as object) : {}) }}
           {...props}
         />
         {trailing}

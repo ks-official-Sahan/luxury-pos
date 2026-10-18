@@ -4,6 +4,8 @@ import { useState } from "react";
 import { ScrollView, View } from "react-native";
 import { formatMoney } from "@luxury-pos/core";
 import { api } from "@/lib/api";
+import { useFormat } from "@/lib/format";
+import { useOutbox } from "@/state/outbox";
 import { useCan, useMe } from "@/lib/queries";
 import { fillDays, periods, RANGES, useReport, type Anomaly, type RangeKey, type StaffRow, type Summary, type TopProduct } from "@/lib/reports";
 import { useTerm, useTokens } from "@/theme/BrandProvider";
@@ -65,6 +67,8 @@ export default function Dashboard() {
   const [range, setRange] = useState<RangeKey>("7d");
   const [chosen, setStoreId] = useState<string | undefined>(undefined);
   const [question, setQuestion] = useState("");
+  const f = useFormat();
+  const queued = useOutbox((o) => o.items.length);
   const days = RANGES.find((r) => r.value === range)!.days;
   const { current, previous } = periods(days);
   const stores = me.data?.stores ?? [];
@@ -93,7 +97,7 @@ export default function Dashboard() {
   return (
     <Screen
       title="Overview"
-      subtitle={`${storeId ? stores.find((x) => x.id === storeId)?.name : "All stores"} · ${current.from === current.to ? "today" : `${current.from} to ${current.to}`}`}
+      subtitle={`${storeId ? stores.find((x) => x.id === storeId)?.name : "All stores"} · ${current.from === current.to ? "Today" : f.range(current.from, current.to)}`}
       toolbar={
         <Row gap={3} wrap>
           <Segmented label="Period" value={range} onChange={setRange} options={RANGES} />
@@ -110,6 +114,19 @@ export default function Dashboard() {
     >
       {summary.error ? <ErrorNote message="The numbers could not load. They will retry automatically." onRetry={() => void summary.refetch()} /> : null}
 
+      {/* Lead with what someone can act on; the figures follow. */}
+      {(low.data?.length ?? 0) + flagged.length + queued > 0 ? (
+        <View accessibilityRole="summary" style={{ flexDirection: "row", flexWrap: "wrap", gap: t.space(2) }}>
+          {low.data?.length ? (
+            <Button kind="soft" size="sm" icon={<Warning size={16} color={t.color.onPrimarySoft} />} label={`${low.data.length} item${low.data.length > 1 ? "s" : ""} running low`} trailing={<ArrowRight size={14} color={t.color.onPrimarySoft} />} onPress={() => router.navigate("/inventory")} />
+          ) : null}
+          {flagged.length ? (
+            <Button kind="soft" size="sm" icon={<Warning size={16} color={t.color.onPrimarySoft} />} label={`${flagged.length} unusual activit${flagged.length > 1 ? "ies" : "y"} to review`} trailing={<ArrowRight size={14} color={t.color.onPrimarySoft} />} onPress={() => router.navigate("/team")} />
+          ) : null}
+          {queued ? <Button kind="soft" size="sm" label={`${queued} sale${queued > 1 ? "s" : ""} waiting to sync`} trailing={<ArrowRight size={14} color={t.color.onPrimarySoft} />} onPress={() => router.navigate("/settings")} /> : null}
+        </View>
+      ) : null}
+
       <Columns weights={[2, 1]}>
         <Panel>
           <Row justify="space-between" align="flex-start" wrap>
@@ -117,12 +134,12 @@ export default function Dashboard() {
               <Text variant="label" tone="muted">
                 Net sales
               </Text>
-              {s ? <Money amount={s.net} currency={currency} variant="amountLg" /> : <Skeleton width={220} height={40} />}
+              {s ? <Money amount={s.net} currency={currency} variant="amount" style={{ fontSize: t.display.xl, lineHeight: Math.round(t.display.xl * 1.15) }} /> : <Skeleton width={200} height={32} />}
               {s && p ? <Delta current={s.net} previous={p.net} /> : null}
             </Stack>
             <Button kind="ghost" size="sm" label="See orders" trailing={<ArrowRight size={16} color={t.color.text} />} onPress={() => router.navigate("/orders")} />
           </Row>
-          <View style={{ marginTop: t.space(5) }}>{summary.isLoading ? <Skeleton height={180} /> : <AreaChart series={series} compare={compare} format={money} label="Net sales per day, dashed line is the previous period" />}</View>
+          <View style={{ marginTop: t.space(5) }}>{summary.isLoading ? <Skeleton height={180} /> : <AreaChart series={series} compare={compare} format={money} formatX={(x) => f.date(x)} tickX={(x) => f.tick(x)} label="Net sales per day, dashed line is the previous period" />}</View>
         </Panel>
         <Panel>
           <SectionHeader title="Key figures" description="Against the previous period of the same length" />

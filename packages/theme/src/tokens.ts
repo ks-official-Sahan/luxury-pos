@@ -109,10 +109,16 @@ function colors(p: Palette, scheme: "light" | "dark", pureNeutrals: boolean): Co
   const chrome = layer(bg, dark ? -0.015 : -0.018);
   const soft = (c: Hex) => mix(surface, c, dark ? 0.22 : 0.12);
   const primarySoft = soft(primary);
-  const success = ensureContrast(p.success, surface, 4.5);
-  const warning = ensureContrast(p.warning, surface, 4.5);
-  const danger = ensureContrast(p.danger, surface, 4.5);
-  const info = ensureContrast(dark ? "#7DB3FF" : "#2563B8", surface, 4.5);
+  // Status colours are read on the plain surface and on their own soft fill (badges, notes):
+  // the fill is tinted from the brand's colour, then the text is nudged until both pass 4.5:1.
+  const status = (raw: string) => {
+    const fill = soft(ensureContrast(raw, surface, 4.5));
+    return [ensureContrast(ensureContrast(raw, surface, 4.5), fill, 4.5), fill] as const;
+  };
+  const [success, successSoft] = status(p.success);
+  const [warning, warningSoft] = status(p.warning);
+  const [danger, dangerSoft] = status(p.danger);
+  const [info, infoSoft] = status(dark ? "#7DB3FF" : "#2563B8");
   return {
     primary,
     onPrimary: contrastRatio(onPrimary, primary) >= 4.5 ? onPrimary : readableOn(primary),
@@ -134,14 +140,14 @@ function colors(p: Palette, scheme: "light" | "dark", pureNeutrals: boolean): Co
     borderStrong: ensureContrast(mix(text, bg, 0.62), surface, 3),
     focus: ensureContrast(p.accent, bg, 3),
     success,
-    successSoft: soft(success),
+    successSoft,
     warning,
-    warningSoft: soft(warning),
+    warningSoft,
     danger,
-    dangerSoft: soft(danger),
+    dangerSoft,
     onDanger: readableOn(danger),
     info,
-    infoSoft: soft(info),
+    infoSoft,
   };
 }
 

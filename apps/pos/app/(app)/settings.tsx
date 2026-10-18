@@ -8,6 +8,7 @@ import { copyText } from "@/lib/clipboard";
 import { API_URL } from "@/lib/config";
 import { api } from "@/lib/api";
 import { useCan, useMe, useStore } from "@/lib/queries";
+import { useUi } from "@/shell/ui-state";
 import { useOutbox, type OutboxItem } from "@/state/outbox";
 import { useSession } from "@/state/session";
 import { useTokens } from "@/theme/BrandProvider";
@@ -258,6 +259,30 @@ function TillSection() {
 
 /* ------------------------------------------------------------------ PIN */
 
+/** Per-device: how long the till waits before locking behind the PIN. */
+function AutoLock() {
+  const minutes = useUi((s) => s.autoLockMinutes);
+  const set = useUi((s) => s.set);
+  return (
+    <Stack gap={2}>
+      <Text variant="label" tone="muted">
+        Lock this till after no activity for
+      </Text>
+      <Segmented
+        label="Auto-lock"
+        value={String(minutes)}
+        onChange={(v) => set({ autoLockMinutes: Number(v) })}
+        options={[
+          { value: "2", label: "2 min" },
+          { value: "5", label: "5 min" },
+          { value: "15", label: "15 min" },
+          { value: "0", label: "Never" },
+        ]}
+      />
+    </Stack>
+  );
+}
+
 function PinSection() {
   const [pin, setPin] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -277,7 +302,8 @@ function PinSection() {
   };
 
   return (
-    <Section title="Your till PIN" description="Switch users quickly at the till and approve overrides. Use 4 to 8 digits. Sequences like 1234 and repeats like 1111 are refused.">
+    <Section title="Your till PIN" description="Unlocks this till and approves overrides. Use 4 to 8 digits. Sequences like 1234 and repeats like 1111 are refused.">
+      <AutoLock />
       <Field
         label="New PIN"
         value={pin}

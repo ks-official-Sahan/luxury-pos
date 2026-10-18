@@ -13,7 +13,7 @@ export function Screen({ title, subtitle, actions, toolbar, children, fill, maxW
   const { gutter, wide } = useLayout();
   const header = (
     <View style={{ gap: t.space(4), paddingHorizontal: gutter, paddingTop: gutter, paddingBottom: t.space(4), width: "100%", maxWidth, alignSelf: "center" }}>
-      <View style={{ flexDirection: wide ? "row" : "column", alignItems: wide ? "flex-end" : "flex-start", justifyContent: "space-between", gap: t.space(3) }}>
+      <View style={{ flexDirection: wide ? "row" : "column", alignItems: wide ? "center" : "flex-start", justifyContent: "space-between", gap: t.space(3) }}>
         <View style={{ gap: 4, flexShrink: 1 }}>
           <Text variant="title" accessibilityRole="header">
             {title}

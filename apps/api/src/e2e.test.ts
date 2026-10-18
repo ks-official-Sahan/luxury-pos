@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { priceCart, uuidv7, type Role } from "@luxury-pos/core";
-import { dailySales, orderLines, orders, stockLevels, customers, withTenant } from "@luxury-pos/db";
+import { dailySales, memberships, orderLines, orders, stockLevels, customers, withTenant } from "@luxury-pos/db";
 import { seedDemo } from "@luxury-pos/db/seed";
 import { createApp } from "./app";
 import { createAuth } from "./auth";
@@ -13,10 +13,10 @@ import { loadEnv } from "./env";
 import { createInfra, type Infra } from "./infra";
 import type { Actor } from "./lib/context";
 import { AppError } from "./lib/errors";
-import { createApiToken } from "./services/admin";
+import { createApiToken, verifyPin } from "./services/admin";
 import { createOrder, refundOrder } from "./services/orders";
 import { requestOverride } from "./services/overrides";
-import { lowStock } from "./services/inventory";
+import { availableSerials, lowStock } from "./services/inventory";
 import { salesSummary } from "./services/reports";
 import { listAudit, listOrders, orderDetail, publicBrand, roleMatrix, setRolePermissions } from "./services/backoffice";
 import { outbox } from "@luxury-pos/db";
@@ -222,5 +222,15 @@ suite("POS end to end", () => {
   it("serves only name and theme publicly", async () => {
     const brand = await publicBrand(infra, slug);
     expect(Object.keys(brand).sort()).toEqual(["name", "theme"]);
+  });
+  it("unlocks a till with the person's own PIN only, and lists serials in stock", async () => {
+    const [m] = await withTenant(infra.db, seed.tenantId, (tx) => tx.select({ id: memberships.id }).from(memberships).where(eq(memberships.userId, seed.staff.CASHIER!)));
+    const cashier = { ...actorFor("CASHIER", [seed.stores.paris]), membershipId: m!.id };
+    await expect(verifyPin(infra, cashier, "0000")).rejects.toMatchObject({ code: "wrong_pin" });
+    expect(await verifyPin(infra, cashier, "4826")).toEqual({ ok: true });
+    const watch = seed.variants.find((v) => v.serialized)!;
+    const serials = await availableSerials(infra, cashier, seed.stores.paris, watch.id);
+    expect(serials.map((x) => x.serial)).toContain("AUR-0001-PAR");
+    await expect(availableSerials(infra, cashier, seed.stores.dubai, watch.id)).rejects.toMatchObject({ code: "forbidden" });
   });
 });

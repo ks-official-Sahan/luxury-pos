@@ -70,8 +70,14 @@ export function TenderPanel({ onBack, onDone }: { onBack: () => void; onDone: ()
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CheckoutResult | null>(null);
   const [approval, setApproval] = useState<null | "price" | "discount">(null);
+  // Card, gift card and credit almost always take the whole balance in one tap;
+  // the keypad appears only for cash (amount tendered) or when splitting.
+  const [custom, setCustom] = useState(false);
 
-  useEffect(() => setDigits(""), [method]);
+  useEffect(() => {
+    setDigits("");
+    setCustom(false);
+  }, [method]);
 
   const program = me.data?.tenant.loyalty;
   const redeemable = program && client && priced ? maxRedeemablePoints(program, priced.total, client.pointsBalance) : 0;
@@ -90,6 +96,18 @@ export function TenderPanel({ onBack, onDone }: { onBack: () => void; onDone: ()
   const amount = digits ? Number(digits) : balance;
   const valid = amount > 0 && (method === "cash" || amount <= balance);
   const finishing = !!state && !state.settled && amount >= balance && valid;
+  const keypad = method === "cash" || custom;
+  const verb = method === "card" ? "Charge" : "Take";
+  const methodWord = method === "card" ? "card" : method === "cash" ? "cash" : label(method).toLowerCase();
+  const actionLabel = state?.settled
+    ? "Complete sale"
+    : finishing
+      ? method === "cash" && amount > balance
+        ? `Take ${formatMoney(amount, store?.currency ?? "USD")} cash · change ${formatMoney(amount - balance, store?.currency ?? "USD")}`
+        : method === "card"
+          ? `Charge ${formatMoney(amount, store?.currency ?? "USD")} to card`
+          : `${verb} ${formatMoney(amount, store?.currency ?? "USD")} ${methodWord}`
+      : `Add ${formatMoney(amount, store?.currency ?? "USD")} ${methodWord} · ${formatMoney(balance - amount, store?.currency ?? "USD")} left`;
 
   const complete = async (list: Tender[], overrideToken?: string) => {
     setBusy(true);
@@ -112,7 +130,12 @@ export function TenderPanel({ onBack, onDone }: { onBack: () => void; onDone: ()
   const done = result && (result.kind === "done" || result.kind === "queued") ? result : null;
   const digit = (d: string) => setDigits((v) => (v + d).replace(/^0+/, "").slice(0, 10));
   const keys: Record<string, () => void> = { escape: done ? onDone : onBack, enter: done ? onDone : take, "mod+enter": done ? onDone : take, backspace: () => setDigits((v) => v.slice(0, -1)) };
-  for (const d of "0123456789") keys[d] = () => !done && digit(d);
+  for (const d of "0123456789")
+    keys[d] = () => {
+      if (done) return;
+      setCustom(true); // typing digits on a physical keyboard means "a specific amount"
+      digit(d);
+    };
   useShortcuts(keys);
 
   if (!store || !priced) return null;
@@ -175,29 +198,34 @@ export function TenderPanel({ onBack, onDone }: { onBack: () => void; onDone: ()
 
         <Segmented label="Payment method" size="lg" value={method} onChange={setMethod} options={METHODS.map(({ value, label: l, icon: Icon }) => ({ value, label: l, icon: <Icon size={18} color={method === value ? t.color.text : t.color.textMuted} /> }))} />
 
-        {!state?.settled ? (
+        {!state?.settled && keypad ? (
           <Stack gap={3}>
             <Row justify="space-between" style={{ paddingHorizontal: t.space(1) }}>
               <Text variant="label" tone="muted">
-                {label(method)} amount
+                {method === "cash" ? "Cash received" : `${label(method)} amount`}
               </Text>
               <Money amount={amount} currency={store.currency} variant="amount" tone={digits ? "text" : "muted"} />
             </Row>
             {quickCash.length ? (
               <Row gap={2} wrap>
                 {quickCash.map((q) => (
-                  <Button key={q} kind={q === amount ? "soft" : "secondary"} size="sm" label={q === balance ? "Exact" : formatMoney(q, store.currency)} onPress={() => setDigits(String(q))} />
+                  <Button key={q} kind={q === amount ? "soft" : "secondary"} size="md" label={q === balance ? "Exact" : formatMoney(q, store.currency)} onPress={() => setDigits(String(q))} style={{ flexGrow: 1 }} />
                 ))}
               </Row>
             ) : null}
             <Keypad onDigit={digit} onBack={() => setDigits((v) => v.slice(0, -1))} />
-            {method === "cash" && amount > balance ? (
-              <Text variant="label" tone="warning" style={{ textAlign: "center", fontWeight: "600" }}>
-                Change {formatMoney(amount - balance, store.currency)}
-              </Text>
-            ) : null}
             {method !== "cash" && amount > balance ? <Text variant="caption" tone="danger">Only cash can be more than the balance.</Text> : null}
+            {custom ? <Button kind="ghost" size="sm" label={`Charge the full ${formatMoney(balance, store.currency)} instead`} onPress={() => (setCustom(false), setDigits(""))} style={{ alignSelf: "center" }} /> : null}
           </Stack>
+        ) : null}
+
+        {!state?.settled && !keypad ? (
+          <View style={{ alignItems: "center", gap: t.space(2), paddingVertical: t.space(2) }}>
+            <Text variant="label" tone="muted" style={{ textAlign: "center", maxWidth: 360 }}>
+              {method === "card" ? "Present the terminal to the client, then confirm here once it is approved." : `The full balance goes on ${methodWord}.`}
+            </Text>
+            <Button kind="ghost" size="sm" label="Split or pay part" onPress={() => setCustom(true)} />
+          </View>
         ) : null}
 
         {redeemable > 0 ? <Switch value={usePoints} onChange={setUsePoints} label={`Use ${redeemable.toLocaleString()} points`} description={`${client!.pointsBalance.toLocaleString()} available · worth ${formatMoney(redeemable * program!.pointValueMinor, store.currency)}`} /> : null}
@@ -227,7 +255,7 @@ export function TenderPanel({ onBack, onDone }: { onBack: () => void; onDone: ()
           block
           loading={busy}
           disabled={!state?.settled && !valid}
-          label={state?.settled ? "Complete sale" : finishing ? `Take ${formatMoney(amount, store.currency)} · finish` : `Add ${label(method).toLowerCase()} ${formatMoney(amount, store.currency)}`}
+          label={actionLabel}
           trailing={Platform.OS === "web" ? <Kbd>↵</Kbd> : undefined}
           onPress={take}
         />

@@ -70,3 +70,5 @@ export { RobotIcon as Robot } from "phosphor-react-native/src/icons/Robot";
 export { ArrowLineDownIcon as ArrowLineDown } from "phosphor-react-native/src/icons/ArrowLineDown";
 export { LockIcon as Lock } from "phosphor-react-native/src/icons/Lock";
 export { PhoneIcon as Phone } from "phosphor-react-native/src/icons/Phone";
+export { EyeIcon as Eye } from "phosphor-react-native/src/icons/Eye";
+export { EyeSlashIcon as EyeSlash } from "phosphor-react-native/src/icons/EyeSlash";

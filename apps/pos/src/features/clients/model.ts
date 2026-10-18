@@ -49,10 +49,11 @@ export function tierLabel(tierId: string | null): string {
   return tierId ? tierId.charAt(0).toUpperCase() + tierId.slice(1) : "Member";
 }
 
-export function formatDay(iso: string | null, locale: string): string | null {
+/** Dates follow the device language like every other screen (see lib/format); `_locale` is kept for callers. */
+export function formatDay(iso: string | null, _locale?: string): string | null {
   if (!iso) return null;
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" });
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
 /* ------------------------------------------------------------- form model */

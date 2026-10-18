@@ -61,11 +61,17 @@ Every interactive component implements default, hover (web), focus-visible ring,
 ## Register flow
 
 1. Scan or search (the field is the scanner input; Enter adds an exact SKU; `/` focuses it).
-2. Tap tiles; quantities stack except serialized pieces.
-3. Client strip at the top of the sale: tier and points visible before payment.
-4. **Charge** shows the total on the button (⌘/Ctrl+Enter).
-5. Payment replaces the catalogue, the sale stays visible. Method segmented control, terminal-style keypad (digits shift in from the right), quick cash amounts, one press takes the full balance and finishes. Split tenders, points and change are inline.
-6. Done state: change due in a large warm panel, receipt number, print, **New sale** (Enter). Offline: "Saved on this till", never an error.
+2. Tap tiles; quantities stack except serialized pieces. A serialized piece opens its line with the serial numbers in stock at this store; Charge will not proceed until one is chosen.
+3. Tap any line to open it in place: serial number, line discount, unit price. Anything above the associate's limit is approved by a manager at payment, so editing never blocks.
+4. Client strip at the top of the sale: tier and points visible before payment.
+5. **Hold** puts the sale aside (client still browsing); **Held n** picks one up again and holds the current sale first. **Clear** and line removal act at once and offer **Undo** in a toast, never an "are you sure?" dialog.
+6. **Charge** shows the total on the button (⌘/Ctrl+Enter).
+7. Payment replaces the catalogue, the sale stays visible. Card, gift card and credit take the full balance in one press ("Charge €X to card"); the keypad appears only for cash (with quick amounts and the change on the button) or after **Split or pay part**. Typing digits on a keyboard switches to a specific amount.
+8. Done state: change due in a large warm panel, receipt number, print, **New sale** (Enter). Offline: "Saved on this till", never an error.
+
+## Shared tills
+
+The till locks behind the person's PIN after the store's chosen idle time (2, 5 or 15 minutes, per device, in Settings), from the sidebar lock button or ⌘/Ctrl+L. The sale in progress is kept. **Switch person** signs out so a colleague can sign in. Wrong PINs share the server's PIN rate limit.
 
 ## Motion
 
