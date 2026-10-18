@@ -22,6 +22,8 @@ const schema = z.object({
   NATIVE_ORIGINS: list.default(["luxurypos://"]),
   UPSTASH_REDIS_REST_URL: z.url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+  /** Directory of the exported web app (apps/pos/dist) to serve on the same origin. */
+  WEB_DIST: z.string().optional(),
   TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
 });
 

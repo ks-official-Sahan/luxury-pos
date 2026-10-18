@@ -8,7 +8,7 @@ const inputs = {
     name: "Maison Noir",
     light: { primary: "#111111", accent: "#A8834A", background: "#F7F4EE", surface: "#FFFFFF", text: "#141414" },
     dark: { primary: "#D8B878", accent: "#C9A46A", background: "#0D0D0E", surface: "#17171A", text: "#F2EEE6" },
-    fonts: { display: { family: "Cormorant Garamond", source: google, weights: [500, 600] }, body: { family: "Inter", source: google, weights: [400, 500, 600] } },
+    fonts: { display: { family: "Cormorant Garamond", source: google, weights: [500, 600] }, body: { family: "Manrope", source: google, weights: [400, 500, 600] } },
     type: { base: 16, ratio: 1.333 },
     radius: "subtle",
     density: "spacious",
@@ -25,7 +25,7 @@ const inputs = {
   modern: {
     name: "Modern Retail",
     light: { primary: "#1F4FFF", accent: "#00A389", background: "#F6F7F9", surface: "#FFFFFF", text: "#0F172A" },
-    fonts: { display: { family: "Inter", source: google, weights: [600, 700] }, body: { family: "Inter", source: google, weights: [400, 500] } },
+    fonts: { display: { family: "Plus Jakarta Sans", source: google, weights: [600, 700] }, body: { family: "Plus Jakarta Sans", source: google, weights: [400, 500] } },
     radius: "soft",
     density: "comfortable",
   },

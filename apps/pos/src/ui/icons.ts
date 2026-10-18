@@ -1,0 +1,21 @@
+// Deep imports: the package root pulls in all ~9,000 icons (several MB on web).
+export { ArrowRightIcon as ArrowRight } from "phosphor-react-native/src/icons/ArrowRight";
+export { ChartLineUpIcon as ChartLineUp } from "phosphor-react-native/src/icons/ChartLineUp";
+export { CheckIcon as Check } from "phosphor-react-native/src/icons/Check";
+export { CloudArrowUpIcon as CloudArrowUp } from "phosphor-react-native/src/icons/CloudArrowUp";
+export { CloudSlashIcon as CloudSlash } from "phosphor-react-native/src/icons/CloudSlash";
+export { CreditCardIcon as CreditCard } from "phosphor-react-native/src/icons/CreditCard";
+export { GiftIcon as Gift } from "phosphor-react-native/src/icons/Gift";
+export { MagnifyingGlassIcon as MagnifyingGlass } from "phosphor-react-native/src/icons/MagnifyingGlass";
+export { MinusIcon as Minus } from "phosphor-react-native/src/icons/Minus";
+export { MoneyIcon as Money } from "phosphor-react-native/src/icons/Money";
+export { PackageIcon as Package } from "phosphor-react-native/src/icons/Package";
+export { PaletteIcon as Palette } from "phosphor-react-native/src/icons/Palette";
+export { PlusIcon as Plus } from "phosphor-react-native/src/icons/Plus";
+export { ShoppingBagIcon as ShoppingBag } from "phosphor-react-native/src/icons/ShoppingBag";
+export { SparkleIcon as Sparkle } from "phosphor-react-native/src/icons/Sparkle";
+export { TagIcon as Tag } from "phosphor-react-native/src/icons/Tag";
+export { TrashIcon as Trash } from "phosphor-react-native/src/icons/Trash";
+export { UserCircleIcon as UserCircle } from "phosphor-react-native/src/icons/UserCircle";
+export { UsersThreeIcon as UsersThree } from "phosphor-react-native/src/icons/UsersThree";
+export { XIcon as X } from "phosphor-react-native/src/icons/X";

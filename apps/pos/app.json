@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Luxury POS",
+    "slug": "luxury-pos",
+    "scheme": "luxurypos",
+    "version": "0.1.0",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.luxurypos.app", "requireFullScreen": false },
+    "android": { "package": "com.luxurypos.app", "edgeToEdgeEnabled": true },
+    "web": { "bundler": "metro", "output": "single", "favicon": "./assets/favicon.png" },
+    "icon": "./assets/icon.png",
+    "plugins": ["expo-router", "expo-secure-store", "expo-font"],
+    "experiments": { "typedRoutes": false }
+  }
+}

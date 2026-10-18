@@ -9,3 +9,5 @@ out
 .env.*
 !.env.example
 coverage
+apps/desktop/web
+apps/desktop/dist

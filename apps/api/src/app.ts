@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { z } from "zod";
 import { ROLES } from "@luxury-pos/core";
 import {
@@ -61,7 +62,7 @@ export function createApp(infra: Infra, auth: Auth) {
   app.use(securityHeaders());
   app.use("/api/*", cors({ origin: webOrigins, credentials: true, allowHeaders: ["content-type", "authorization", "x-tenant-id", "idempotency-key"], maxAge: 600 }));
   app.use("/api/*", bodyLimit({ maxSize: 512 * 1024 }));
-  app.use("/api/*", originGuard({ siteUrl: env.SITE_URL, nativeOrigins: env.NATIVE_ORIGINS }));
+  app.use("/api/*", originGuard({ siteUrl: env.SITE_URL, extraOrigins: env.APP_ORIGINS, nativeOrigins: env.NATIVE_ORIGINS }));
 
   app.get("/healthz", async (c) => {
     await infra.pool.query("select 1");
@@ -79,6 +80,13 @@ export function createApp(infra: Infra, auth: Auth) {
     const ip = c.req.header("x-real-ip") ?? "unknown";
     if (!(await infra.limit("login:ip", `signup:${ip}`)).ok) throw new AppError(429, "rate_limited", "try again later");
     return c.json(await admin.signUpTenant(infra, signUpSchema.parse(await c.req.json())), 201);
+  });
+
+  // Businesses the signed-in person works for (the device picks one, then sends X-Tenant-Id).
+  app.get("/api/tenants", async (c) => {
+    const session = await auth.readSession(c.req.raw.headers);
+    if (!session) throw new AppError(401, "unauthenticated", "sign in required");
+    return c.json(await admin.listTenants(infra, session.userId));
   });
 
   // Everything below needs a session (+ X-Tenant-Id) or a personal access token.
@@ -165,6 +173,12 @@ export function createApp(infra: Infra, auth: Auth) {
   mcp.post("/", (c) => handleMcp(infra, actor(c), c.req.raw));
   mcp.on(["GET", "DELETE"], "/", (c) => c.json({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null }, 405));
   app.route("/mcp", mcp);
+
+  // Optional: serve the exported web app from the same origin (no CORS, first-party cookies).
+  if (env.WEB_DIST) {
+    app.use("/*", serveStatic({ root: env.WEB_DIST }));
+    app.get("*", serveStatic({ root: env.WEB_DIST, path: "index.html" }));
+  }
 
   return app;
 }

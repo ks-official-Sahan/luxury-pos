@@ -24,6 +24,16 @@ export async function bootstrap(infra: Infra, actor: Actor) {
   });
 }
 
+export async function listTenants(infra: Infra, userId: string) {
+  return withSystem(infra.db, (tx) =>
+    tx
+      .select({ id: tenants.id, name: tenants.name, slug: tenants.slug, role: memberships.role })
+      .from(memberships)
+      .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+      .where(and(eq(memberships.userId, userId), eq(memberships.active, true))),
+  );
+}
+
 /** A store owner signs up: user, tenant, first store, OWNER membership and the first device — one transaction. */
 export async function signUpTenant(
   infra: Infra,
