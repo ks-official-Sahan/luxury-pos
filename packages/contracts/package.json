@@ -1,0 +1,12 @@
+{
+  "name": "@luxury-pos/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Zod request/response contracts shared by the API, the apps and the MCP server.",
+  "exports": { ".": { "types": "./src/index.ts", "default": "./src/index.ts" } },
+  "sideEffects": false,
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "zod": "^4.6.7", "@luxury-pos/core": "workspace:*", "@luxury-pos/theme": "workspace:*" },
+  "devDependencies": { "typescript": "^5.9.3" }
+}

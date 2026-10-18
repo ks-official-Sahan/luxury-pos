@@ -1,0 +1,25 @@
+{
+  "name": "@luxury-pos/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Postgres schema (Drizzle), tenant-scoped transactions with RLS, migrations and seed.",
+  "exports": {
+    ".": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./schema": { "types": "./src/schema.ts", "default": "./src/schema.ts" }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "generate": "drizzle-kit generate",
+    "migrate": "tsx src/migrate.ts",
+    "seed": "tsx src/seed.ts"
+  },
+  "dependencies": {
+    "@luxury-pos/core": "workspace:*",
+    "@luxury-pos/theme": "workspace:*",
+    "@sahan-sac/auth-kit": "^0.12.1",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": { "@types/pg": "^8.23.1", "drizzle-kit": "^0.31.11", "tsx": "^4.23.15", "typescript": "^5.9.3" }
+}

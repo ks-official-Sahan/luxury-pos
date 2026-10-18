@@ -1,0 +1,38 @@
+{
+  "name": "@luxury-pos/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-tenant POS API: Hono on Node, auth-kit (Better Auth engine), Postgres with RLS, staff MCP endpoint.",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "worker": "tsx src/worker.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@better-auth/expo": "^1.7.10",
+    "@hono/node-server": "^2.1.5",
+    "@luxury-pos/contracts": "workspace:*",
+    "@luxury-pos/core": "workspace:*",
+    "@luxury-pos/db": "workspace:*",
+    "@luxury-pos/theme": "workspace:*",
+    "@modelcontextprotocol/server": "^2.3.1",
+    "@sahan-sac/ai-core": "^0.5.0",
+    "@sahan-sac/analytics-kit": "^0.2.0",
+    "@sahan-sac/auth-kit": "^0.12.1",
+    "@sahan-sac/email-kit": "^0.4.0",
+    "@sahan-sac/media-kit": "^0.4.1",
+    "@upstash/ratelimit": "^2.2.0",
+    "@upstash/redis": "^1.39.0",
+    "bcryptjs": "^3.0.3",
+    "better-auth": "^1.7.10",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.13",
+    "pg": "^8.23.1",
+    "resend": "^6.34.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": { "@types/node": "^24.0.0", "@types/pg": "^8.23.1", "tsx": "^4.23.15", "typescript": "^5.9.3", "vitest": "^5.0.5" }
+}
