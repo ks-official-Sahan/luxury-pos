@@ -44,7 +44,7 @@ export default function Clients() {
     <Surface raised style={{ flex: 1 }}>
       <Stack gap={4}>
         <Stack gap={1}>
-          <Text variant="eyebrow" tone="primary">
+          <Text variant="overline" tone="primary">
             {(profile.data.customer.tierId ?? "member").toUpperCase()} · {profile.data.customer.pointsBalance} points
           </Text>
           <Text variant="title">{[profile.data.customer.firstName, profile.data.customer.lastName].filter(Boolean).join(" ")}</Text>
@@ -85,7 +85,7 @@ export default function Clients() {
   );
 
   return (
-    <Screen eyebrow="Clienteling" title={`${term("Customer")}s`} actions={can("customer.write") ? <Button label={`New ${term("Customer").toLowerCase()}`} onPress={() => setCreating(true)} /> : null}>
+    <Screen title={`${term("Customer")}s`} actions={can("customer.write") ? <Button label={`New ${term("Customer").toLowerCase()}`} onPress={() => setCreating(true)} /> : null}>
       <View style={{ flexDirection: wide ? "row" : "column", gap: t.space(5) }}>
         <Stack gap={3} style={{ width: wide ? 360 : "100%" }}>
           <Field label="Search" value={q} onChangeText={setQ} placeholder="Name, email or phone" autoCapitalize="none" />

@@ -64,7 +64,6 @@ export default function Brand() {
 
   return (
     <Screen
-      eyebrow="Brand studio"
       title="Make it yours"
       subtitle="Colours, type and feel for every till, receipt and email. Changes preview instantly."
       actions={
@@ -144,12 +143,12 @@ export default function Brand() {
         </Stack>
 
         <Stack gap={4} style={{ width: wide ? 360 : "100%" }}>
-          <Text variant="eyebrow" tone="muted">
+          <Text variant="overline" tone="muted">
             Preview
           </Text>
           <Surface raised>
             <Stack gap={3}>
-              <Text variant="eyebrow" tone="muted">
+              <Text variant="overline" tone="muted">
                 {draft.name}
               </Text>
               <Text variant="title">Le Sac Plume</Text>

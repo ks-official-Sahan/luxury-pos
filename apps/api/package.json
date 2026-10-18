@@ -9,7 +9,8 @@
     "start": "node --conditions=react-server --import tsx src/server.ts",
     "worker": "node --conditions=react-server --import tsx src/worker.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "demo": "node --conditions=react-server --import tsx src/demo.ts"
   },
   "dependencies": {
     "@better-auth/expo": "^1.7.10",

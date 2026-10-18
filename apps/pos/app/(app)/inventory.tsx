@@ -37,7 +37,7 @@ export default function Inventory() {
   const valid = Number.isInteger(Number(qty)) && Number(qty) !== 0 && (mode === "adjust" || Number(qty) > 0);
 
   return (
-    <Screen eyebrow={store?.name ?? ""} title="Stock" subtitle="Running low, suggested reorders and quick corrections.">
+    <Screen title="Stock" subtitle="Running low, suggested reorders and quick corrections.">
       <Stack gap={5}>
         <Surface>
           <Stack gap={3}>
