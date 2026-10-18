@@ -1,0 +1,1 @@
+CREATE INDEX "customers_tenant_recent" ON "customers" USING btree ("tenant_id","last_purchase_at" DESC NULLS LAST,"id");

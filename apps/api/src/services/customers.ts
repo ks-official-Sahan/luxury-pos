@@ -46,10 +46,9 @@ export async function updateCustomer(infra: Infra, actor: Actor, id: string, pat
 export async function searchCustomers(infra: Infra, actor: Actor, query: string, limit = 20) {
   assertCan(actor, "customer.read");
   const term = query.trim();
-  if (term.length < 2) throw new AppError(400, "query_too_short", "type at least 2 characters");
+  if (term.length === 1) throw new AppError(400, "query_too_short", "type at least 2 characters");
   return withTenant(infra.db, actor.tenantId, async (tx) => {
-    const rows = await tx
-      .select({
+    const columns = {
         id: customers.id,
         firstName: customers.firstName,
         lastName: customers.lastName,
@@ -59,7 +58,14 @@ export async function searchCustomers(infra: Infra, actor: Actor, query: string,
         pointsBalance: customers.pointsBalance,
         lifetimeSpend: customers.lifetimeSpend,
         lastPurchaseAt: customers.lastPurchaseAt,
-      })
+    };
+    // No query: the clients served most recently (index-backed), so associates start from who just walked in.
+    if (!term) {
+      const recent = await tx.select(columns).from(customers).orderBy(sql`${customers.lastPurchaseAt} desc nulls last`, desc(customers.id)).limit(limit);
+      return recent.map((r) => mask(actor, r));
+    }
+    const rows = await tx
+      .select(columns)
       .from(customers)
       .where(
         sql`(lower(${customers.email}) = lower(${term}) or ${customers.phone} = ${term}

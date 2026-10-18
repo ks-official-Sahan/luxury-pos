@@ -15,6 +15,13 @@
       "when": 1792318307978,
       "tag": "0001_orders_tenant_keyset",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792320437412,
+      "tag": "0002_customers_recent",
+      "breakpoints": true
     }
   ]
 }

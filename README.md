@@ -2,8 +2,12 @@
 
 A universal, brand-customizable point of sale. Luxury retail is the flagship use case, but it adapts to any store. One codebase covers **iOS, Android, web, Windows, macOS and Linux**, backed by a multi-tenant API and a **staff MCP server** for AI-assisted management.
 
-- **Research:** market, flaws in current POS systems, opportunities and roadmap → [docs/RESEARCH.md](docs/RESEARCH.md)
-- **Architecture:** design decisions, data model, security, scaling → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Research:** market, flaws in current POS systems, UI/UX findings, opportunities and roadmap → [docs/RESEARCH.md](docs/RESEARCH.md)
+- **Product and design:** [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md), [docs/UI_CONVENTIONS.md](docs/UI_CONVENTIONS.md)
+- **Architecture:** decisions, events and Kafka, edge gateway, Django and microservice readiness, data model, security, scaling → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Operations:** Docker, nginx, backups and restore drills → [docs/OPERATIONS.md](docs/OPERATIONS.md)
+- **API contract:** [docs/openapi.json](docs/openapi.json) (also served at `/api/openapi.json`)
+- **Kits:** how the `@sahan-sac/*` packages are used and what to fix upstream → [docs/SAHAN-KITS.md](docs/SAHAN-KITS.md)
 
 ## What's in the box
 
@@ -16,8 +20,12 @@ A universal, brand-customizable point of sale. Luxury retail is the flagship use
 | Loyalty | Points, tiers with multipliers, redemption caps, FIFO expiring lots, refund claw-back |
 | Management | Per-tenant roles (Owner → Auditor), store scope, tenant-editable permission matrix, drawer open/close with blind count and Z-report, audit trail, loss-prevention signals |
 | Insights | Rollup-backed dashboards and an AI analyst (`@sahan-sac/ai-core`, free-first provider chain) |
-| Branding | Per-tenant or per-store theme: colours, fonts, radius, density, appearance, terminology, receipt layout. Live preview, contrast guard |
-| MCP | `/mcp` Streamable HTTP endpoint with 12 tools (sales, best sellers, low stock, staff, loss prevention, products, clients, AI analyst, previewed stock adjustment). Scoped personal access tokens |
+| Branding | Brand studio per tenant or store: light and dark palettes (OKLCH-derived neutrals, contrast report), fonts and scale, radius, density, motion, register layout (sale side, tiles or list, tile size, photos, stock, quick cash), store vocabulary, logo, receipt. Live preview, W3C design token export |
+| Back office | Overview dashboard (period comparison, best sellers, team, needs attention, AI analyst), orders with refunds, team with editable role matrix and audit trail, settings with offline queue, till PIN, devices, MCP tokens |
+| Shell | Sidebar, rail or phone tab bar by screen size; store switcher re-themes the app; live sync status; ⌘/Ctrl+K command palette and keyboard shortcuts |
+| MCP | `/mcp` Streamable HTTP endpoint with 18 tools (sales, best sellers, low stock, staff, loss prevention, products, clients, orders, order detail, team, role matrix, audit trail, AI analyst, previewed stock adjustment and transfer) and a daily briefing prompt. Scoped personal access tokens |
+| Events | CloudEvents domain events via the transactional outbox, relayed to Kafka when configured |
+| Edge | Cloudflare Worker gateway: static app, origin failover, per-context routing, edge cache, rate limits |
 
 **@sahan-sac kits:**
 
@@ -30,9 +38,11 @@ A universal, brand-customizable point of sale. Luxury retail is the flagship use
 ## Layout
 
 ```
-apps/api       Hono API + MCP endpoint + outbox worker
+apps/api       Hono API + MCP endpoint + outbox worker (events → Kafka)
 apps/pos       Expo Router app (iOS, Android, web)
 apps/desktop   Electron shell (Windows, macOS, Linux)
+apps/edge      Cloudflare Worker edge gateway
+docker/, infra/, scripts/   images, nginx, Postgres init, backup and restore
 packages/core  domain logic (pure, tested)
 packages/theme brand theming (pure, tested)
 packages/contracts, packages/db
@@ -55,6 +65,19 @@ cp apps/api/.env.example apps/api/.env   # fill AUTH_SECRET etc.
 pnpm --filter @luxury-pos/pos build:web
 cd apps/api && set -a && . ./.env && set +a && WEB_DIST=../pos/dist pnpm start
 # → http://localhost:8787  (demo: owner@maison-aurelia.test / demo-password-123, manager PIN 4826)
+```
+
+**Demo history** (realistic sales through the real order service, for dashboards and the AI analyst):
+
+```bash
+cd apps/api && set -a && . ./.env && set +a && pnpm demo 45
+```
+
+**Everything in Docker** (Postgres, Redis, API, worker, nginx; add `--profile events` for Redpanda, `--profile ops` for scheduled backups):
+
+```bash
+cp .env.docker.example .env.docker && docker compose --env-file .env.docker up --build
+# → http://localhost:8080
 ```
 
 **Native and desktop:**
