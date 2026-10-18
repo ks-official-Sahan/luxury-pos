@@ -5,8 +5,18 @@
   "type": "module",
   "description": "Postgres schema (Drizzle), tenant-scoped transactions with RLS, migrations and seed.",
   "exports": {
-    ".": { "types": "./src/index.ts", "default": "./src/index.ts" },
-    "./schema": { "types": "./src/schema.ts", "default": "./src/schema.ts" }
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./schema": {
+      "types": "./src/schema.ts",
+      "default": "./src/schema.ts"
+    },
+    "./seed": {
+      "types": "./src/seed.ts",
+      "default": "./src/seed.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -19,7 +29,13 @@
     "@luxury-pos/theme": "workspace:*",
     "@sahan-sac/auth-kit": "^0.12.1",
     "drizzle-orm": "^0.45.4",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "bcryptjs": "^3.0.3"
   },
-  "devDependencies": { "@types/pg": "^8.23.1", "drizzle-kit": "^0.31.11", "tsx": "^4.23.15", "typescript": "^5.9.3" }
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
 }

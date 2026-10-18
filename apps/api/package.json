@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Multi-tenant POS API: Hono on Node, auth-kit (Better Auth engine), Postgres with RLS, staff MCP endpoint.",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
-    "worker": "tsx src/worker.ts",
+    "dev": "tsx watch --conditions=react-server src/server.ts",
+    "start": "node --conditions=react-server --import tsx src/server.ts",
+    "worker": "node --conditions=react-server --import tsx src/worker.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

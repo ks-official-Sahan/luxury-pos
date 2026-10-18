@@ -30,6 +30,10 @@ import { allowed, assertCan, type Actor } from "../lib/context";
 import { AppError, conflict, notFound } from "../lib/errors";
 import { verifyOverride } from "./overrides";
 
+/** `array[$1, $2, ...]::type[]` — drizzle expands a bare JS array into a parameter list, not a Postgres array. */
+const pgArray = (values: readonly (string | number)[], type: "uuid" | "int") =>
+  sql`array[${sql.join(values.map((v) => sql`${v}`), sql`, `)}]::${sql.raw(type)}[]`;
+
 /** Local calendar day of an instant in the store's timezone (rollups are per store day). */
 export function storeDay(at: Date, timezone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
@@ -80,7 +84,6 @@ export async function createOrder(infra: Infra, actor: Actor, input: CreateOrder
       if (!approvedBy) throw new AppError(403, "override_required", "price override needs manager approval", { action: "price" });
     }
     const hasDiscount = !!input.orderDiscount || input.lines.some((l) => l.discount);
-    if (hasDiscount) assertCan(actor, "sale.discount", store.id);
 
     const lineInputs = input.lines.map((l, i) => {
       const v = byId.get(l.variantId)!;
@@ -89,7 +92,9 @@ export async function createOrder(infra: Infra, actor: Actor, input: CreateOrder
     });
     const priced = priceCart({ currency: store.currency, taxMode: store.taxMode, lines: lineInputs, orderDiscount: input.orderDiscount });
 
-    if (hasDiscount && discountNeedsApproval(priced, store.settings.maxDiscountBps) && !allowed(actor, "sale.discount.override", store.id)) {
+    // No discount right at all, or above the role's cap: a manager approves on the spot.
+    const discountApproval = hasDiscount && (!allowed(actor, "sale.discount", store.id) || (discountNeedsApproval(priced, store.settings.maxDiscountBps) && !allowed(actor, "sale.discount.override", store.id)));
+    if (discountApproval) {
       approvedBy = overrideFor("discount") ?? null;
       if (!approvedBy) throw new AppError(403, "override_required", "discount above your limit needs manager approval", { action: "discount" });
     }
@@ -217,7 +222,7 @@ export async function createOrder(infra: Infra, actor: Actor, input: CreateOrder
         const lots = await tx.select({ id: pointLots.id, remaining: pointLots.remaining, expiresAt: pointLots.expiresAt }).from(pointLots).where(and(eq(pointLots.customerId, customer.id), sql`${pointLots.remaining} > 0`));
         const takes = consumeLots(lots, redeem, createdAt);
         await tx.execute(sql`update point_lots p set remaining = p.remaining - v.take
-          from (select unnest(${takes.map((t) => t.lotId)}::uuid[]) as id, unnest(${takes.map((t) => t.points)}::int[]) as take) v where p.id = v.id`);
+          from (select unnest(${pgArray(takes.map((t) => t.lotId), "uuid")}) as id, unnest(${pgArray(takes.map((t) => t.points), "int")}) as take) v where p.id = v.id`);
         await tx.insert(pointLedger).values({ tenantId: actor.tenantId, customerId: customer.id, delta: -redeem, kind: "redeem", orderId: order.id, actorId: actor.userId });
       }
       if (earned > 0 && program) {
@@ -315,7 +320,7 @@ export async function refundOrder(infra: Infra, actor: Actor, input: RefundInput
 
     await tx.insert(refunds).values({ id: input.id, tenantId: actor.tenantId, orderId: order.id, total, reason: input.reason, staffId: actor.userId, approvedBy });
     await tx.execute(sql`update order_lines l set refunded_quantity = l.refunded_quantity + v.q
-      from (select unnest(${input.lines.map((l) => l.orderLineId)}::uuid[]) as id, unnest(${input.lines.map((l) => l.quantity)}::int[]) as q) v where l.id = v.id`);
+      from (select unnest(${pgArray(input.lines.map((l) => l.orderLineId), "uuid")}) as id, unnest(${pgArray(input.lines.map((l) => l.quantity), "int")}) as q) v where l.id = v.id`);
     await tx.insert(payments).values(input.tenders.map((t) => ({ tenantId: actor.tenantId, orderId: order.id, refundId: input.id, method: t.method, amount: -t.amount, reference: t.reference })));
     if (movements.length) {
       await tx.insert(stockMovements).values(movements);
