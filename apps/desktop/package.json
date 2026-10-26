@@ -12,7 +12,7 @@
     "dist:mac": "pnpm bundle:web && electron-builder --mac --publish never",
     "dist:linux": "pnpm bundle:web && electron-builder --linux --publish never"
   },
-  "devDependencies": { "electron": "^44.9.0", "electron-builder": "^26.15.3" },
+  "devDependencies": { "electron": "^45.0.0", "electron-builder": "^26.18.0" },
   "build": {
     "appId": "com.luxurypos.desktop",
     "productName": "Luxury POS",
