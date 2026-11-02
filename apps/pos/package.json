@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@better-auth/expo": "^1.7.10",
+    "@better-auth/expo": "^1.7.14",
     "@luxury-pos/contracts": "workspace:*",
     "@luxury-pos/core": "workspace:*",
     "@luxury-pos/theme": "workspace:*",
