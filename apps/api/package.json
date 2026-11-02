@@ -26,7 +26,7 @@
     "@sahan-sac/email-kit": "^0.4.0",
     "@sahan-sac/media-kit": "^0.4.1",
     "@upstash/ratelimit": "^2.2.0",
-    "@upstash/redis": "^1.39.0",
+    "@upstash/redis": "^1.40.0",
     "bcryptjs": "^3.0.3",
     "better-auth": "^1.7.10",
     "drizzle-orm": "^0.45.4",
